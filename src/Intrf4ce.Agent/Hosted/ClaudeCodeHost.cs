@@ -131,6 +131,10 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
                 var process = new Process { StartInfo = start, EnableRaisingEvents = true };
                 process.Exited += (_, _) => OnExited(process);
                 process.Start();
+                if (OperatingSystem.IsWindows())
+                {
+                    ChildProcessGuard.Adopt(process);
+                }
 
                 _process = process;
                 _stdin = process.StandardInput;
@@ -291,6 +295,11 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             StandardErrorEncoding = new UTF8Encoding(false),
             StandardInputEncoding = new UTF8Encoding(false),
         };
+
+        // Load intrf4ce's tools up front. Claude Code otherwise defers MCP tool schemas and the
+        // first thing every session does is a tool search, a round trip before any slide
+        // appears; with only intrf4ce's sixteen tools there is nothing to save by deferring.
+        start.Environment["ENABLE_TOOL_SEARCH"] = "false";
 
         // A .cmd shim from npm cannot be started directly without a shell.
         if (executable.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || executable.EndsWith(".bat", StringComparison.OrdinalIgnoreCase))

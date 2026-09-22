@@ -158,7 +158,16 @@ public sealed class MainWindow : Window
         }
 
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
-        _stage.PointerPressed += OnStagePressed;
+        _stage.Clicked += (_, world) =>
+        {
+            _stage.Focus();
+            if (_controller.IsOverview)
+            {
+                _controller.ShowSlideAt(world);
+            }
+        };
+        _stage.DoubleTapped += (_, _) => _controller.Reframe();
+        _stage.PointerPressed += (_, _) => _stage.Focus();
         _stage.Focusable = true;
 
         Opened += (_, _) => Start(settingsError);
@@ -315,12 +324,42 @@ public sealed class MainWindow : Window
 
         switch (e.Key)
         {
-            case Key.Right or Key.PageDown or Key.Down:
+            case Key.Right or Key.PageDown:
                 _controller.Next();
                 break;
 
-            case Key.Left or Key.PageUp or Key.Up:
+            case Key.Left or Key.PageUp:
                 _controller.Previous();
+                break;
+
+            // Up and down walk the current slide's parts (a diagram's steps, an image's
+            // callouts); on a slide without parts they move between slides.
+            case Key.Down:
+                if (!_controller.Step(+1))
+                {
+                    _controller.Next();
+                }
+
+                break;
+
+            case Key.Up:
+                if (!_controller.Step(-1))
+                {
+                    _controller.Previous();
+                }
+
+                break;
+
+            case Key.OemPlus or Key.Add:
+                _stage.ZoomAt(new Point(_stage.Bounds.Width / 2, _stage.Bounds.Height / 2), 0.8);
+                break;
+
+            case Key.OemMinus or Key.Subtract:
+                _stage.ZoomAt(new Point(_stage.Bounds.Width / 2, _stage.Bounds.Height / 2), 1.25);
+                break;
+
+            case Key.D0 or Key.NumPad0:
+                _controller.Reframe();
                 break;
 
             case Key.Home:
@@ -373,17 +412,6 @@ public sealed class MainWindow : Window
         }
 
         e.Handled = true;
-    }
-
-    private void OnStagePressed(object? sender, PointerPressedEventArgs e)
-    {
-        _stage.Focus();
-        if (_controller.IsOverview)
-        {
-            var screen = e.GetPosition(_stage);
-            var inverse = _stage.View.ToMatrix(_stage.Bounds.Size).Invert();
-            _controller.ShowSlideAt(inverse.Transform(screen));
-        }
     }
 
     private void BringForward()

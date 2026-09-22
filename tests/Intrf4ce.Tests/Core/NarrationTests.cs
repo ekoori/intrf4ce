@@ -32,6 +32,15 @@ public class NarrationTests
     }
 
     [Fact]
+    public void ACueBeforePunctuationLeavesNoStraySpace()
+    {
+        var parsed = CueParser.Parse("the patella, your kneecap [[zoom knee 0.4 0.1 0.3 0.3]], which protects it.");
+
+        Assert.Equal("the patella, your kneecap, which protects it.", parsed.Text);
+        Assert.StartsWith(", which", parsed.Text[parsed.Cues[0].Offset..], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ZoomTakesARegion()
     {
         var parsed = CueParser.Parse("Look here [[zoom map 0.1 0.2 0.3 0.4]] closely.");

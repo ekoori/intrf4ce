@@ -194,7 +194,7 @@
         "type": "object",
         "properties": {
           "target": { "type": "string", "description": "element or element.part on the current slide; omit to clear." },
-          "region": { "type": "array", "items": { "type": "number" }, "description": "[x, y, w, h] fractions of the element, to zoom somewhere that is not a named part." }
+          "region": { "type": "array", "items": { "type": "number" }, "description": "[x, y, w, h] as fractions, to zoom somewhere that is not a named part. For images and diagrams these are fractions of the picture itself, the same space as callouts and inspect_image; otherwise of the element." }
         }
       }
     },

@@ -25,7 +25,7 @@ public enum CueKind
 /// <summary>An action timed to a point in the narration.</summary>
 /// <param name="Offset">Index into the spoken text where the cue fires: the start of the word that follows it.</param>
 /// <param name="Target">The element id, or element.part, the cue acts on.</param>
-/// <param name="Region">Zoom only: [x, y, w, h] as fractions of the element.</param>
+/// <param name="Region">Zoom only: [x, y, w, h] as fractions of the element, or of its picture for images and diagrams.</param>
 public sealed record Cue(CueKind Kind, int Offset, string? Target = null, double[]? Region = null)
 {
     /// <summary>The element part of <see cref="Target"/>.</summary>
@@ -89,10 +89,16 @@ public static partial class CueParser
             AppendSpoken(text, narration.AsSpan(position, match.Index - position));
             position = match.Index + match.Length;
 
-            // A marker between two words would leave two spaces; drop the one after it.
+            // A marker between two words would leave two spaces; drop the one after it. One
+            // before punctuation ("kneecap [[zoom …]], which") would leave "kneecap ,": drop the one before.
             if (position < narration.Length && narration[position] == ' ' && EndsWithSpaceOrEmpty(text))
             {
                 position++;
+            }
+            else if (position < narration.Length && narration[position] is ',' or '.' or ';' or ':' or '!' or '?' or ')'
+                && text.Length > 0 && text[^1] == ' ')
+            {
+                text.Length--;
             }
 
             var cue = ParseOne(match.Groups[1].Value, text.Length, out var error);

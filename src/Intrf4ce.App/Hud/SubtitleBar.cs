@@ -28,7 +28,7 @@ public sealed class SubtitleBar : Border
         _skin = skin;
         HorizontalAlignment = HorizontalAlignment.Center;
         VerticalAlignment = VerticalAlignment.Bottom;
-        Margin = new Thickness(0, 0, 0, 132);
+        Margin = new Thickness(0, 0, 0, 104);
         MaxWidth = 1100;
         Padding = new Thickness(26, 12);
         CornerRadius = new CornerRadius(14);

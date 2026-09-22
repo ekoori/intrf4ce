@@ -20,6 +20,7 @@ public sealed class ImageView : ElementView
     private const int DecodeSide = 2560;
 
     private readonly Image _bitmap = new() { Stretch = Stretch.Fill };
+    private readonly Border _paper = new() { CornerRadius = new CornerRadius(10), IsVisible = false };
     private readonly SvgPictureControl _vector = new() { MaxScale = 100 };
     private readonly CalloutLayer _callouts;
     private TextBlock? _caption;
@@ -30,6 +31,8 @@ public sealed class ImageView : ElementView
         : base(context, element)
     {
         _callouts = new CalloutLayer(context.Skin);
+        _paper.Background = new SolidColorBrush(Color.FromRgb(0xF7, 0xF5, 0xF0));
+        Children.Add(_paper);
         Children.Add(_bitmap);
         Children.Add(_vector);
         Children.Add(_callouts);
@@ -66,6 +69,11 @@ public sealed class ImageView : ElementView
         return null;
     }
 
+    public override Rect RegionBounds(double x, double y, double width, double height) =>
+        _imageRect.Width <= 0
+            ? base.RegionBounds(x, y, width, height)
+            : new Rect(_imageRect.X + (x * _imageRect.Width), _imageRect.Y + (y * _imageRect.Height), width * _imageRect.Width, height * _imageRect.Height);
+
     /// <summary>The label of a callout, in this view's coordinates, for the spotlight to include.</summary>
     public Rect? LabelBounds(string part) => _callouts.LabelOf(part);
 
@@ -97,6 +105,10 @@ public sealed class ImageView : ElementView
         _vector.Picture = loaded.Vector;
         _vector.IsVisible = loaded.Vector is not null;
         _natural = new Size(loaded.Width, loaded.Height);
+
+        // Diagrams are usually drawn in black on transparent, for paper; on the dark stage
+        // they need the paper back or their labels vanish.
+        _paper.IsVisible = loaded.Vector is not null || loaded.Transparent;
 
         if (loaded.Width < 400 && loaded.Height < 400)
         {
@@ -130,6 +142,7 @@ public sealed class ImageView : ElementView
         var box = fit == "cover" ? area : area.Fit(aspect);
         _imageRect = new Rect(box.X, box.Y, box.Width, box.Height);
 
+        _paper.Arrange(_imageRect.Inflate(6));
         _bitmap.Arrange(_imageRect);
         _vector.Arrange(_imageRect);
         _callouts.Place(_imageRect, bounds);

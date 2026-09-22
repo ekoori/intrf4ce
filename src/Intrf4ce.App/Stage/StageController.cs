@@ -148,6 +148,64 @@ public sealed class StageController : IStage
         Publish();
     }
 
+    /// <summary>Back to the whole current slide, after the user zoomed or panned by hand.</summary>
+    public void Reframe()
+    {
+        if (_overview)
+        {
+            _stage.FlyTo(StageView.DeckRect(_deck?.Count ?? 0), margin: 0.06);
+        }
+        else if (_current >= 0)
+        {
+            ClearFocusMarks();
+            _focus = null;
+            _stage.FlyTo(StageView.SlideRect(_current));
+            Publish();
+        }
+    }
+
+    /// <summary>
+    /// Focuses the next (or previous) part of the current slide: a diagram's steps in order,
+    /// or failing that its nodes, an image's callouts, a table's rows.
+    /// </summary>
+    /// <returns>False when the slide has nothing to step through.</returns>
+    public bool Step(int direction)
+    {
+        if (CurrentView is not { } slide || _overview)
+        {
+            return false;
+        }
+
+        var targets = new List<string>();
+        foreach (var element in slide.Elements)
+        {
+            var parts = element.Element is DiagramElement { Steps: { Count: > 0 } steps } ? steps : element.Parts;
+            targets.AddRange(parts.Select(p => $"{element.Id}.{p}"));
+        }
+
+        if (targets.Count == 0)
+        {
+            return false;
+        }
+
+        var index = _focus is null ? -1 : targets.IndexOf(_focus);
+        var next = index + direction;
+        if (next < 0 || next >= targets.Count)
+        {
+            // Past either end: back to the whole slide, and one more press leaves it.
+            if (_focus is null)
+            {
+                return false;
+            }
+
+            Focus(null, null);
+            return true;
+        }
+
+        Focus(targets[next], null);
+        return true;
+    }
+
     /// <summary>In overview, clicking a slide flies to it.</summary>
     public void ShowSlideAt(Point world)
     {
@@ -198,7 +256,7 @@ public sealed class StageController : IStage
         Rect local;
         if (region is [var x, var y, var w, var h])
         {
-            local = new Rect(x * element.Bounds.Width, y * element.Bounds.Height, w * element.Bounds.Width, h * element.Bounds.Height);
+            local = element.RegionBounds(x, y, w, h);
         }
         else if (part is null)
         {

@@ -64,6 +64,21 @@ public sealed class ChatBar : StackPanel
 
         _input.KeyDown += OnInputKey;
 
+        // Fluent paints a focused box black with an accent border; the bar is the frame here,
+        // so the box itself stays invisible in every state.
+        foreach (var key in new[]
+        {
+            "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
+            "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused",
+        })
+        {
+            _input.Resources[key] = Brushes.Transparent;
+        }
+
+        _input.Resources["TextControlForegroundFocused"] = theme.Brush(theme.Text);
+        _input.Resources["TextControlForegroundPointerOver"] = theme.Brush(theme.Text);
+        _input.Resources["TextControlPlaceholderForegroundFocused"] = theme.Brush(theme.Faint);
+
         var hint = new TextBlock
         {
             Text = "↵",

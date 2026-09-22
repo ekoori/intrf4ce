@@ -50,7 +50,7 @@ public sealed class PresenterTools : IToolDispatcher
             ["focus"] = (a, _, c) => FocusAsync(a, c),
             ["say"] = (a, _, c) => SayAsync(a, c),
             ["reply"] = (a, _, _) => Task.FromResult(Reply(a)),
-            ["wait_for_user"] = (a, _, c) => WaitForUserAsync(a, c),
+            ["wait_for_user"] = (a, s, c) => WaitForUserAsync(a, s, c),
             ["snapshot"] = (a, _, c) => SnapshotAsync(a, c),
             ["inspect_image"] = (a, _, c) => InspectImageAsync(a, c),
             ["scan_media"] = (a, _, c) => ScanMediaAsync(a, c),
@@ -330,8 +330,16 @@ public sealed class PresenterTools : IToolDispatcher
         return ToolResult.Ok("shown in the chat");
     }
 
-    private async Task<ToolResult> WaitForUserAsync(JsonObject arguments, CancellationToken cancellationToken)
+    private async Task<ToolResult> WaitForUserAsync(JsonObject arguments, McpSession? session, CancellationToken cancellationToken)
     {
+        // The hosted agent receives events as messages on its stdin, and they are only read
+        // between turns; waiting here would hold the turn open while the user's next message
+        // sat unread behind it.
+        if (session?.Kind == SessionKind.Hosted)
+        {
+            return ToolResult.Ok("You are intrf4ce's built-in presenter: the user's messages and stage events reach you as new messages. Do not wait for them; end your turn when the work is done.");
+        }
+
         var seconds = Number(arguments, "timeout_seconds") ?? 60;
         seconds = Math.Clamp(seconds, 1, MaxWaitSeconds);
 

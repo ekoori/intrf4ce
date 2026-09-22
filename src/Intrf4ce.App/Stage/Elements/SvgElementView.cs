@@ -43,6 +43,22 @@ public sealed class SvgElementView : ElementView
             found.Box.Height * scale);
     }
 
+    public override Rect RegionBounds(double x, double y, double width, double height)
+    {
+        if (_picture.Picture is not { } picture)
+        {
+            return base.RegionBounds(x, y, width, height);
+        }
+
+        var (scale, ox, oy) = _picture.PictureToControl;
+        var origin = _picture.Bounds.Position;
+        return new Rect(
+            origin.X + ox + (x * picture.Width * scale),
+            origin.Y + oy + (y * picture.Height * scale),
+            width * picture.Width * scale,
+            height * picture.Height * scale);
+    }
+
     protected override async Task LoadAsync(Element element, CancellationToken cancellationToken)
     {
         if (_caption is not null)

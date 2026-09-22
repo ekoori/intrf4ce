@@ -54,6 +54,14 @@ public abstract class ElementView : Panel
     /// <summary>Where a part is, in this view's coordinates; null if there is no such part.</summary>
     public virtual Rect? PartBounds(string part) => null;
 
+    /// <summary>
+    /// A zoom region, given as fractions, in this view's coordinates. Fractions of the whole
+    /// element by default; pictures override it to mean fractions of the picture, because that
+    /// is what the agent measured them on.
+    /// </summary>
+    public virtual Rect RegionBounds(double x, double y, double width, double height) =>
+        new(x * Bounds.Width, y * Bounds.Height, width * Bounds.Width, height * Bounds.Height);
+
     /// <summary>Starts (or restarts) loading this element. Called once on creation and on every change.</summary>
     public void Update(Element element, bool force = false)
     {

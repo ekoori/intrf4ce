@@ -10,7 +10,8 @@ using SkiaSharp;
 namespace Intrf4ce.App.Media;
 
 /// <summary>An image ready to draw: a bitmap, or for SVG sources a vector picture.</summary>
-public sealed record LoadedImage(Bitmap? Bitmap, SvgPicture? Vector, double Width, double Height, string Path);
+/// <param name="Transparent">Its corners are see-through: probably a diagram made for a white page.</param>
+public sealed record LoadedImage(Bitmap? Bitmap, SvgPicture? Vector, double Width, double Height, string Path, bool Transparent = false);
 
 /// <summary>
 /// Resolves an image source against the open deck and decodes it for the stage.
@@ -62,7 +63,20 @@ public sealed class ImageLoader(AssetFetcher fetcher, DeckService decks)
         using var bitmap = ImageDecoder.Decode(path, maxSide)
             ?? throw new InvalidDataException($"{Path.GetFileName(path)} is not an image this platform can decode");
 
-        return new LoadedImage(ToAvalonia(bitmap), null, bitmap.Width, bitmap.Height, path);
+        return new LoadedImage(ToAvalonia(bitmap), null, bitmap.Width, bitmap.Height, path, HasTransparentCorners(bitmap));
+    }
+
+    private static bool HasTransparentCorners(SKBitmap bitmap)
+    {
+        if (bitmap.AlphaType == SKAlphaType.Opaque)
+        {
+            return false;
+        }
+
+        var w = bitmap.Width - 1;
+        var h = bitmap.Height - 1;
+        return new[] { (0, 0), (w, 0), (0, h), (w, h), (w / 2, 0), (0, h / 2) }
+            .Count(p => bitmap.GetPixel(p.Item1, p.Item2).Alpha < 16) >= 3;
     }
 
     public static Bitmap ToAvalonia(SKBitmap bitmap)
