@@ -302,7 +302,12 @@ WebView loads only vendored local scripts and blocks network requests; Mermaid r
 | **M2 Rich renderers** | render service; `diagram` with focusable nodes and steps; `math` and Markdown math; `chart` |
 | **M3 Photos, data, interaction** | `gallery`, `scan_media`, `table`, `quiz`, ask-about-this |
 
-M0 to M3 are built. What M3 added beyond the plan: clicking any part of a slide focuses it and
+All five milestones are built, with these caveats: the Linux and macOS builds compile and
+publish but have only been exercised on Windows, the container smoke test needs a runtime that
+was not running when it was written, and the `say`, espeak and Piper voices are written from
+their documented command lines rather than tried.
+
+What M3 added beyond the plan: clicking any part of a slide focuses it and
 clicking it again goes back, a transcript panel (`T`), and part names that come from content —
 table rows and a folder's photos — which are slugs ("Knee joint" is `knee-joint`, `IMG_2031.jpg`
 is `img-2031`) so the validator can check a cue before anything is drawn.
