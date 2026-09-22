@@ -130,6 +130,7 @@ public sealed class SlideView : Border
                 isNew = true;
             }
 
+            view.SlideId = slide.Id;
             var resized = view.Width != box.Width || view.Height != box.Height;
             view.Width = box.Width;
             view.Height = box.Height;

@@ -48,7 +48,10 @@ public sealed class MainWindow : Window
     private readonly Grid _root;
     private readonly HeaderBar _header;
     private readonly ChatBar _chat;
+    private readonly TranscriptPanel _transcript;
     private readonly WelcomePanel _welcome;
+    private AskSubject? _asking;
+    private int _toolCalls;
 
     public MainWindow(AppPaths paths, AppSettings settings, string? settingsError)
     {
@@ -76,7 +79,8 @@ public sealed class MainWindow : Window
 
         _stage = new StageView(_theme) { AnimationSpeed = settings.Stage.AnimationSpeed };
         _root = new Grid();
-        _controller = new StageController(_stage, new ElementContext(_theme, _renderer, images), _decks, () => _stage)
+        var context = new ElementContext(_theme, _renderer, images, PublishFromStage);
+        _controller = new StageController(_stage, context, _decks, () => _stage)
         {
             FollowAgent = settings.Stage.FollowAgent,
         };
@@ -98,6 +102,7 @@ public sealed class MainWindow : Window
         // ---- view
         _header = new HeaderBar(_theme);
         _chat = new ChatBar(_theme);
+        _transcript = new TranscriptPanel(_theme);
         _welcome = new WelcomePanel(_theme);
         _subtitles = new SubtitleBar(_theme);
         _narrator = new Narrator(_voices, _audio, _controller, _subtitles, _chat.Orb, settings.Narration);
@@ -124,6 +129,7 @@ public sealed class MainWindow : Window
         _root.Children.Add(_header);
         _root.Children.Add(_subtitles);
         _root.Children.Add(_chat);
+        _root.Children.Add(_transcript);
         Content = _root;
 
         // ---- wiring
@@ -132,7 +138,7 @@ public sealed class MainWindow : Window
         _controller.Playback = () => _narrator.State;
         _controller.Voice = _voices.Describe;
         _controller.Agent = DescribeAgent;
-        _controller.CurrentChanged += (_, slide) => _narrator.SlideShown(slide);
+        _controller.CurrentChanged += (_, shown) => _narrator.SlideShown(shown.Slide, shown.Play);
         _controller.CurrentUpdated += (_, slide) => _narrator.SlideUpdated(slide);
         _controller.SlidesChanged += (_, _) => _narrator.SlidesChanged();
         _controller.SayRequested += (_, text) => _narrator.Say(text);
@@ -146,6 +152,8 @@ public sealed class MainWindow : Window
 
         _chat.Submitted += (_, text) => OnChat(text);
         _chat.Dismissed += (_, _) => _stage.Focus();
+        _chat.ContextCleared += (_, _) => _asking = null;
+        _chat.MessageAdded += (_, message) => _transcript.Add(message);
 
         _server.ActivateRequested += (_, _) => Dispatcher.UIThread.Post(BringForward);
         _server.SessionsChanged += (_, _) => Dispatcher.UIThread.Post(UpdateHud);
@@ -161,11 +169,9 @@ public sealed class MainWindow : Window
         _stage.Clicked += (_, world) =>
         {
             _stage.Focus();
-            if (_controller.IsOverview)
-            {
-                _controller.ShowSlideAt(world);
-            }
+            _controller.Click(world);
         };
+        _stage.ContextRequested += OnStageContextRequested;
         _stage.DoubleTapped += (_, _) => _controller.Reframe();
         _stage.PointerPressed += (_, _) => _stage.Focus();
         _stage.Focusable = true;
@@ -218,6 +224,14 @@ public sealed class MainWindow : Window
             _agent.Start(_agent.SessionId);
         }
 
+        if (_asking is { } subject)
+        {
+            _asking = null;
+            _chat.ClearContext();
+            PublishFromStage("ask", text, Meta(subject));
+            return;
+        }
+
         var meta = new Dictionary<string, string>();
         if (_controller.Deck is { } deck && _controller.CurrentIndex >= 0)
         {
@@ -228,8 +242,69 @@ public sealed class MainWindow : Window
         // Plain chat goes to the agent as the user typed it; the context rides along only
         // where there is a channel for it, so the hosted agent's messages read naturally.
         _events.Publish("chat", text, _agent?.IsRunning == true ? null : meta);
-        _chat.SetStatus(_agent is not null ? "Thinking…" : null);
-        _chat.Orb.Mood = OrbMood.Working;
+        ShowSent();
+    }
+
+    /// <summary>Something the user did on the stage (a quiz answer, a question about a part), for the agent.</summary>
+    private void PublishFromStage(string type, string text, IReadOnlyDictionary<string, string> meta)
+    {
+        _events.Publish(type, text, meta);
+        ShowSent();
+    }
+
+    private void ShowSent()
+    {
+        var listening = _agent is not null || _server.Sessions.Any(s => s.Kind != SessionKind.Hosted);
+        _chat.SetStatus(_agent is not null ? "Thinking…" : listening ? "Sent to your agent" : "No agent is connected to hear this");
+        _chat.Orb.Mood = listening ? OrbMood.Working : OrbMood.Absent;
+    }
+
+    private static Dictionary<string, string> Meta(AskSubject subject)
+    {
+        var meta = new Dictionary<string, string> { ["slide"] = subject.SlideId, ["label"] = subject.Label };
+        if (subject.ElementId is { } element)
+        {
+            meta["element"] = element;
+        }
+
+        if (subject.Target is { } target)
+        {
+            meta["target"] = target;
+        }
+
+        return meta;
+    }
+
+    /// <summary>Right-click on the stage: ask about the part under the pointer, or zoom to it.</summary>
+    private void OnStageContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        var screen = e.TryGetPosition(_stage, out var point) ? point : new Point(_stage.Bounds.Width / 2, _stage.Bounds.Height / 2);
+        if (_controller.SubjectAt(_stage.ScreenToWorld(screen)) is not { } subject)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var label = subject.Label.Length > 48 ? subject.Label[..47] + "…" : subject.Label;
+
+        var ask = new MenuItem { Header = $"Ask about “{label}”…" };
+        ask.Click += (_, _) =>
+        {
+            _asking = subject;
+            _chat.SetContext(label);
+        };
+
+        var menu = new ContextMenu();
+        menu.Items.Add(ask);
+
+        if (subject.Target is { } target && target.Contains('.', StringComparison.Ordinal))
+        {
+            var zoom = new MenuItem { Header = "Zoom to it" };
+            zoom.Click += (_, _) => _controller.Focus(target, null);
+            menu.Items.Add(zoom);
+        }
+
+        menu.Open(_stage);
     }
 
     private void OnAgentActivity(AgentActivity activity)
@@ -260,10 +335,25 @@ public sealed class MainWindow : Window
     private void OnToolCalled(McpSession session, string tool)
     {
         // The hosted agent reports its own tool use, in words, through its output stream.
-        if (session.Kind != SessionKind.Hosted)
+        if (session.Kind == SessionKind.Hosted)
         {
-            _chat.SetStatus($"{session.Client}: {tool.Replace('_', ' ')}");
+            return;
         }
+
+        _chat.SetStatus($"{session.Client}: {tool.Replace('_', ' ')}");
+
+        // An attached agent never says it has finished, so the line clears itself when the
+        // calls stop rather than standing there naming the last one for ever.
+        var calls = ++_toolCalls;
+        DispatcherTimer.RunOnce(
+            () =>
+            {
+                if (calls == _toolCalls)
+                {
+                    _chat.SetStatus(null);
+                }
+            },
+            TimeSpan.FromSeconds(4));
     }
 
     private string DescribeAgent()
@@ -372,6 +462,14 @@ public sealed class MainWindow : Window
 
             case Key.O:
                 _controller.ToggleOverview();
+                break;
+
+            case Key.T:
+                _transcript.Toggle();
+                break;
+
+            case Key.Escape when _transcript.IsVisible:
+                _transcript.IsVisible = false;
                 break;
 
             case Key.Escape when _controller.IsOverview:

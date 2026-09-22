@@ -26,7 +26,11 @@ public sealed class ImageLoader(AssetFetcher fetcher, DeckService decks)
 {
     private readonly ConcurrentDictionary<(string Path, int Side), Task<LoadedImage>> _cache = new();
 
-    public async Task<LoadedImage> LoadAsync(string source, int maxSide, CancellationToken cancellationToken)
+    /// <param name="cache">
+    /// False for one-off large decodes (a gallery photo brought into focus), which the caller
+    /// lets go of when it is done; keeping them would hold tens of megabytes per photo.
+    /// </param>
+    public async Task<LoadedImage> LoadAsync(string source, int maxSide, CancellationToken cancellationToken, bool cache = true)
     {
         var deck = decks.Current ?? throw new InvalidOperationException("no deck is open");
         var folder = decks.Store.FolderOf(deck.Id);
@@ -36,6 +40,11 @@ public sealed class ImageLoader(AssetFetcher fetcher, DeckService decks)
         if (relative is not null && relative != recorded)
         {
             decks.AddAsset(source, relative);
+        }
+
+        if (!cache)
+        {
+            return await Task.Run(() => Decode(path, maxSide), cancellationToken).ConfigureAwait(false);
         }
 
         var load = _cache.GetOrAdd((path, maxSide), key => Task.Run(() => Decode(key.Path, key.Side)));

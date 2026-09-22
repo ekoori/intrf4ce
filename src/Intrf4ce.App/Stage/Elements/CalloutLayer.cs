@@ -42,9 +42,6 @@ public sealed class CalloutLayer : Control, ICustomHitTest
         ClipToBounds = false;
     }
 
-    /// <summary>Raised when the user clicks a label or anchor.</summary>
-    public event EventHandler<string>? Clicked;
-
     public void Set(IReadOnlyList<Callout> callouts)
     {
         _callouts = callouts;
@@ -85,6 +82,9 @@ public sealed class CalloutLayer : Control, ICustomHitTest
 
     public bool HitTest(Point point) => Find(point) is not null;
 
+    /// <summary>The callout whose label or anchor is at <paramref name="point"/>, for clicks the stage passes on.</summary>
+    public string? IdAt(Point point) => Find(point);
+
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
@@ -102,16 +102,6 @@ public sealed class CalloutLayer : Control, ICustomHitTest
         base.OnPointerExited(e);
         _hover = null;
         InvalidateVisual();
-    }
-
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        base.OnPointerPressed(e);
-        if (Find(e.GetPosition(this)) is { } id && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
-        {
-            Clicked?.Invoke(this, id);
-            e.Handled = true;
-        }
     }
 
     public override void Render(DrawingContext context)

@@ -80,7 +80,7 @@ public sealed class Narrator
     public bool IsSpeaking => _now is { Paused: false };
 
     /// <summary>A slide came into view: speak it if autoplay is on.</summary>
-    public void SlideShown(Slide? slide)
+    public void SlideShown(Slide? slide, bool play = true)
     {
         Stop();
         _waitingForNext = false;
@@ -91,7 +91,7 @@ public sealed class Narrator
             return;
         }
 
-        if (_settings.Autoplay && !string.IsNullOrWhiteSpace(slide.Narration))
+        if (play && _settings.Autoplay && !string.IsNullOrWhiteSpace(slide.Narration))
         {
             _ = PerformAsync(slide.Narration!, slide);
         }
@@ -383,7 +383,9 @@ public sealed class Narrator
             return;
         }
 
-        if (now.Slide is { } slide && (slide.Advance ?? _settings.Advance) == "auto")
+        // A quiz waits for its answer unless the agent said otherwise.
+        if (now.Slide is { } slide
+            && (slide.Advance ?? (slide.Elements.Any(e => e is QuizElement) ? "manual" : _settings.Advance)) == "auto")
         {
             _advance?.Dispose();
             _advance = DispatcherTimer.RunOnce(() => AdvanceFrom(slide), TimeSpan.FromSeconds(Math.Max(0, _settings.PauseAfter)));

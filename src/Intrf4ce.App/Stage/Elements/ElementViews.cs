@@ -18,6 +18,9 @@ public static class ElementViews
         MarkdownElement markdown => new MarkdownView(context, markdown),
         ImageElement image => new ImageView(context, image),
         DiagramElement or MathElement or ChartElement => new SvgElementView(context, element),
+        TableElement table => new TableView(context, table),
+        GalleryElement gallery => new GalleryView(context, gallery),
+        QuizElement quiz => new QuizView(context, quiz),
         _ => new PlaceholderView(context, element),
     };
 

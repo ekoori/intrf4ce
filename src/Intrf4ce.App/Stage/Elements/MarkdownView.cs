@@ -74,14 +74,17 @@ public sealed class MarkdownView : ElementView
         return new Rect(origin, heading.Bounds.Size).Inflate(new Thickness(12, 8, 12, 60));
     }
 
-    /// <summary>Scrolls a heading into view, for focus cues.</summary>
-    public void BringIntoView(string part)
+    /// <summary>Scrolls a focused heading into view: a long text may have it below the fold.</summary>
+    public override void Highlight(string? part)
     {
-        if (_headings.TryGetValue(part, out var heading))
+        if (part is not null && _headings.TryGetValue(part, out var heading))
         {
             heading.BringIntoView();
         }
     }
+
+    /// <summary>Clicks on text are for reading, not for zooming to a heading.</summary>
+    public override string? PartAt(Point point) => null;
 
     protected override async Task LoadAsync(Element element, CancellationToken cancellationToken)
     {

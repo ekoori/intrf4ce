@@ -50,8 +50,8 @@ public sealed class StageController : IStage
     /// <summary>Something to speak and subtitle; the narrator picks it up.</summary>
     public event EventHandler<string>? SayRequested;
 
-    /// <summary>A different slide is now the one being shown (null: none).</summary>
-    public event EventHandler<Slide?>? CurrentChanged;
+    /// <summary>A different slide is now the one being shown (null: none), and whether to narrate it.</summary>
+    public event EventHandler<ShownSlide>? CurrentChanged;
 
     /// <summary>The slide being shown was replaced by the agent.</summary>
     public event EventHandler<Slide>? CurrentUpdated;
@@ -89,7 +89,7 @@ public sealed class StageController : IStage
 
     public void Last() => Show((_deck?.Count ?? 0) - 1);
 
-    public void Show(int index, bool animate = true)
+    public void Show(int index, bool animate = true, bool play = true)
     {
         if (_deck is null || _deck.Count == 0)
         {
@@ -113,17 +113,17 @@ public sealed class StageController : IStage
 
         if (moved)
         {
-            CurrentChanged?.Invoke(this, CurrentSlide);
+            CurrentChanged?.Invoke(this, new ShownSlide(CurrentSlide, play));
         }
     }
 
-    /// <summary>Undoes what a focus left behind: the spotlight and highlighted callouts.</summary>
+    /// <summary>Undoes what a focus left behind: the spotlight and highlighted parts.</summary>
     private void ClearFocusMarks()
     {
         _stage.Spotlight.Set([]);
-        foreach (var image in CurrentView?.Elements.OfType<ImageView>() ?? [])
+        foreach (var element in CurrentView?.Elements ?? [])
         {
-            image.Highlight(null);
+            element.Highlight(null);
         }
     }
 
@@ -206,22 +206,92 @@ public sealed class StageController : IStage
         return true;
     }
 
-    /// <summary>In overview, clicking a slide flies to it.</summary>
-    public void ShowSlideAt(Point world)
+    /// <summary>
+    /// A click on the stage: in overview it opens the slide; on a slide it focuses the part
+    /// clicked (a callout, a node, a photo, a row), and a second click on it, or a click on
+    /// nothing, goes back to the whole slide.
+    /// </summary>
+    public void Click(Point world)
     {
         if (_deck is null)
         {
             return;
         }
 
-        for (var i = 0; i < _deck.Count; i++)
+        var index = SlideIndexAt(world);
+        if (_overview || (index >= 0 && index != _current))
+        {
+            // Also a slide the user panned into view by hand.
+            if (index >= 0)
+            {
+                Show(index);
+            }
+
+            return;
+        }
+
+        if (HitTest(world) is { Part: { } part } hit)
+        {
+            var target = $"{hit.Element.Id}.{part}";
+            Focus(target == _focus ? null : target, null);
+        }
+        else if (_focus is not null)
+        {
+            Focus(null, null);
+        }
+    }
+
+    /// <summary>What a right-click would ask about: the part under the pointer, its element, or the slide.</summary>
+    public AskSubject? SubjectAt(Point world)
+    {
+        if (_overview || CurrentView is not { } slide || SlideIndexAt(world) != _current)
+        {
+            return null;
+        }
+
+        if (HitTest(world) is not { } hit)
+        {
+            return new AskSubject(slide.SlideId, null, null, slide.Slide.Title is { Length: > 0 } title ? title : "this slide");
+        }
+
+        var element = hit.Element;
+        return hit.Part is { } part
+            ? new AskSubject(slide.SlideId, element.Id, $"{element.Id}.{part}", element.Describe(part))
+            : new AskSubject(slide.SlideId, element.Id, element.Id, element.Describe(null));
+    }
+
+    /// <summary>The element of the current slide under a point in the world, and its part there, if any.</summary>
+    private (ElementView Element, string? Part)? HitTest(Point world)
+    {
+        if (CurrentView is not { } slide)
+        {
+            return null;
+        }
+
+        var origin = StageView.SlideRect(_current).Position;
+        foreach (var element in slide.Elements.Where(e => e.IsVisible).Reverse())
+        {
+            var local = new Point(world.X - origin.X - element.Bounds.X, world.Y - origin.Y - element.Bounds.Y);
+            if (new Rect(element.Bounds.Size).Contains(local))
+            {
+                return (element, element.PartAt(local));
+            }
+        }
+
+        return null;
+    }
+
+    private int SlideIndexAt(Point world)
+    {
+        for (var i = 0; i < (_deck?.Count ?? 0); i++)
         {
             if (StageView.SlideRect(i).Contains(world))
             {
-                Show(i);
-                return;
+                return i;
             }
         }
+
+        return -1;
     }
 
     /// <summary>
@@ -253,33 +323,28 @@ public sealed class StageController : IStage
             return $"There is no element '{elementId}' on slide '{slide.SlideId}' (elements: {string.Join(", ", slide.Elements.Select(e => e.Id))}).";
         }
 
-        Rect local;
-        if (region is [var x, var y, var w, var h])
-        {
-            local = element.RegionBounds(x, y, w, h);
-        }
-        else if (part is null)
-        {
-            local = new Rect(element.Bounds.Size);
-        }
-        else if (element.PartBounds(part) is { } bounds)
-        {
-            local = bounds;
-        }
-        else
+        if (part is not null && region is null && element.PartBounds(part) is null)
         {
             var parts = element.Parts;
             return $"'{elementId}' has no part '{part}'" + (parts.Count > 0 ? $" (parts: {string.Join(", ", parts.Take(40))})." : ".");
         }
 
+        // Marked first: a part in a scrolling list scrolls into view, and is measured where it lands.
         ClearFocusMarks();
+        element.Highlight(part);
+        element.UpdateLayout();
+
+        var local = region is [var x, var y, var w, var h] ? element.RegionBounds(x, y, w, h)
+            : part is not null && element.PartBounds(part) is { } bounds ? bounds
+            : new Rect(element.Bounds.Size);
+
         _focus = target;
         var origin = StageView.SlideRect(_current).Position + element.Bounds.Position;
         var world = new Rect(origin + local.Position, local.Size);
 
         // The spotlight lights the part itself (and a callout's label), not the whole framing.
         var holes = new List<Rect> { world };
-        if (part is not null && element is ImageView pictured && pictured.LabelBounds(part) is { } label)
+        if (part is not null && element.LabelBounds(part) is { } label)
         {
             holes.Add(new Rect(origin + label.Position, label.Size));
         }
@@ -300,11 +365,6 @@ public sealed class StageController : IStage
         // Frame the lit parts together, so a callout's label is on screen with its anchor.
         var frame = holes.Aggregate(world, (all, hole) => all.Union(hole));
         _stage.FlyTo(frame, animate, margin: 0.08);
-        if (element is ImageView image)
-        {
-            image.Highlight(part);
-        }
-
         Publish();
         return null;
     }
@@ -353,7 +413,7 @@ public sealed class StageController : IStage
         {
             if (_deck?.IndexOf(slideId) is { } index and >= 0)
             {
-                Show(index);
+                Show(index, play: play);
             }
         }).GetTask();
 
@@ -466,7 +526,7 @@ public sealed class StageController : IStage
                 PlaceAll();
                 _current = deck.Count > 0 ? 0 : -1;
                 _stage.FlyTo(StageView.SlideRect(Math.Max(0, _current)), animate: false);
-                CurrentChanged?.Invoke(this, CurrentSlide);
+                CurrentChanged?.Invoke(this, new ShownSlide(CurrentSlide, true));
                 break;
 
             case DeckChangeKind.SlideAdded:

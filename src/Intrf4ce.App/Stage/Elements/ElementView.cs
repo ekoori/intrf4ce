@@ -9,7 +9,12 @@ using Intrf4ce.Core.Rendering;
 namespace Intrf4ce.App.Stage.Elements;
 
 /// <summary>What every element view needs from the rest of the app.</summary>
-public sealed record ElementContext(Skin Skin, IRenderService Renderer, ImageLoader Images);
+/// <param name="Publish">Tells the agent something the user did (type, text, routing details).</param>
+public sealed record ElementContext(
+    Skin Skin,
+    IRenderService Renderer,
+    ImageLoader Images,
+    Action<string, string, IReadOnlyDictionary<string, string>> Publish);
 
 /// <summary>
 /// The on-stage view of one element: loads its content, reports whether that worked, and
@@ -44,6 +49,9 @@ public abstract class ElementView : Panel
 
     public string Id => Element.Id;
 
+    /// <summary>The slide this element is on, for the events it reports.</summary>
+    public string SlideId { get; set; } = "";
+
     public Task Ready => _ready.Task;
 
     public IReadOnlyList<SpecIssue> Issues => _issues;
@@ -53,6 +61,21 @@ public abstract class ElementView : Panel
 
     /// <summary>Where a part is, in this view's coordinates; null if there is no such part.</summary>
     public virtual Rect? PartBounds(string part) => null;
+
+    /// <summary>Which part is under <paramref name="point"/> (this view's coordinates), for clicks; null if none.</summary>
+    public virtual string? PartAt(Point point) =>
+        Parts.FirstOrDefault(p => PartBounds(p) is { } bounds && bounds.Contains(point));
+
+    /// <summary>Marks a part as the one in focus, beyond the spotlight the stage draws; null clears it.</summary>
+    public virtual void Highlight(string? part)
+    {
+    }
+
+    /// <summary>Where else a focused part shows itself (a callout's label), for the spotlight to light as well.</summary>
+    public virtual Rect? LabelBounds(string part) => null;
+
+    /// <summary>A few words naming a part, or the whole element when null, for "Ask about this".</summary>
+    public virtual string Describe(string? part) => part ?? Element.Caption ?? $"this {Element.TypeName}";
 
     /// <summary>
     /// A zoom region, given as fractions, in this view's coordinates. Fractions of the whole

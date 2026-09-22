@@ -8,6 +8,9 @@ using Avalonia.Threading;
 
 namespace Intrf4ce.App.Hud;
 
+/// <summary>One line of the conversation.</summary>
+public sealed record ChatMessage(bool FromUser, string Text, DateTime At, bool IsError);
+
 /// <summary>
 /// The strip at the bottom: the agent orb, what it is doing, the message box, and the last
 /// few messages floating above it.
@@ -24,7 +27,9 @@ public sealed class ChatBar : StackPanel
     private readonly TextBox _input;
     private readonly TextBlock _status;
     private readonly StackPanel _bubbles;
-    private readonly List<(bool FromUser, string Text, DateTime At)> _transcript = [];
+    private readonly Border _context;
+    private readonly TextBlock _contextText;
+    private string _placeholder = "Ask for anything to be explained…";
 
     public ChatBar(Skin theme)
     {
@@ -88,10 +93,52 @@ public sealed class ChatBar : StackPanel
             Margin = new Thickness(8, 0, 16, 0),
         };
 
+        // What a question is about, after "Ask about this" on the stage; click to drop it.
+        _contextText = new TextBlock
+        {
+            FontSize = 14,
+            Foreground = theme.Brush(theme.Accent),
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 280,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+        _context = new Border
+        {
+            IsVisible = false,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 0, 0, 0),
+            Padding = new Thickness(10, 4),
+            CornerRadius = new CornerRadius(10),
+            Background = theme.Brush(theme.Accent, 0.14),
+            BorderBrush = theme.Brush(theme.Accent, 0.5),
+            BorderThickness = new Thickness(1),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock { Text = "about", FontSize = 13, Foreground = theme.Brush(theme.Muted), VerticalAlignment = VerticalAlignment.Center },
+                    _contextText,
+                    new TextBlock { Text = "✕", FontSize = 11, Foreground = theme.Brush(theme.Muted), VerticalAlignment = VerticalAlignment.Center },
+                },
+            },
+        };
+
+        _context.PointerPressed += (_, e) =>
+        {
+            ClearContext();
+            e.Handled = true;
+        };
+
         var row = new DockPanel();
         DockPanel.SetDock(Orb, Dock.Left);
+        DockPanel.SetDock(_context, Dock.Left);
         DockPanel.SetDock(hint, Dock.Right);
         row.Children.Add(Orb);
+        row.Children.Add(_context);
         row.Children.Add(hint);
         row.Children.Add(_input);
 
@@ -118,11 +165,38 @@ public sealed class ChatBar : StackPanel
     /// <summary>The user pressed Escape in the box, to give the keyboard back to the stage.</summary>
     public event EventHandler? Dismissed;
 
+    /// <summary>The question stopped being about something on the stage.</summary>
+    public event EventHandler? ContextCleared;
+
+    /// <summary>A message was added, from either side, for the transcript.</summary>
+    public event EventHandler<ChatMessage>? MessageAdded;
+
     public bool IsTyping => _input.IsFocused;
 
-    public IReadOnlyList<(bool FromUser, string Text, DateTime At)> Transcript => _transcript;
+    public bool HasContext => _context.IsVisible;
 
     public void FocusInput() => _input.Focus();
+
+    /// <summary>Makes the next message a question about <paramref name="label"/>.</summary>
+    public void SetContext(string label)
+    {
+        _contextText.Text = label;
+        _context.IsVisible = true;
+        _input.PlaceholderText = "Ask about it…";
+        FocusInput();
+    }
+
+    public void ClearContext()
+    {
+        if (!_context.IsVisible)
+        {
+            return;
+        }
+
+        _context.IsVisible = false;
+        _input.PlaceholderText = _placeholder;
+        ContextCleared?.Invoke(this, EventArgs.Empty);
+    }
 
     public void SetStatus(string? text)
     {
@@ -130,11 +204,18 @@ public sealed class ChatBar : StackPanel
         _status.IsVisible = !string.IsNullOrWhiteSpace(text);
     }
 
-    public void SetPlaceholder(string text) => _input.PlaceholderText = text;
+    public void SetPlaceholder(string text)
+    {
+        _placeholder = text;
+        if (!HasContext)
+        {
+            _input.PlaceholderText = text;
+        }
+    }
 
     public void AddMessage(bool fromUser, string text, bool isError = false)
     {
-        _transcript.Add((fromUser, text, DateTime.Now));
+        MessageAdded?.Invoke(this, new ChatMessage(fromUser, text, DateTime.Now, isError));
 
         var bubble = new Border
         {
@@ -182,15 +263,22 @@ public sealed class ChatBar : StackPanel
     {
         switch (e.Key)
         {
-            case Key.Enter when !string.IsNullOrWhiteSpace(_input.Text):
-                var text = _input.Text!.Trim();
+            case Key.Enter when !string.IsNullOrWhiteSpace(_input.Text) || HasContext:
+                // A question about something may be just the pointing.
+                var text = string.IsNullOrWhiteSpace(_input.Text) ? "Tell me more about this." : _input.Text.Trim();
                 _input.Text = "";
-                AddMessage(fromUser: true, text);
+                AddMessage(fromUser: true, HasContext ? $"About {_contextText.Text}: {text}" : text);
                 Submitted?.Invoke(this, text);
                 e.Handled = true;
                 break;
 
+            case Key.Back when HasContext && string.IsNullOrEmpty(_input.Text):
+                ClearContext();
+                e.Handled = true;
+                break;
+
             case Key.Escape:
+                ClearContext();
                 Dismissed?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
                 break;

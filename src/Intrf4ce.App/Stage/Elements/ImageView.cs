@@ -75,9 +75,17 @@ public sealed class ImageView : ElementView
             : new Rect(_imageRect.X + (x * _imageRect.Width), _imageRect.Y + (y * _imageRect.Height), width * _imageRect.Width, height * _imageRect.Height);
 
     /// <summary>The label of a callout, in this view's coordinates, for the spotlight to include.</summary>
-    public Rect? LabelBounds(string part) => _callouts.LabelOf(part);
+    public override Rect? LabelBounds(string part) => _callouts.LabelOf(part);
 
-    public void Highlight(string? calloutId) => _callouts.Highlight(calloutId);
+    public override void Highlight(string? part) => _callouts.Highlight(part);
+
+    /// <summary>Only the callouts themselves (label, leader end, outlined box) take clicks.</summary>
+    public override string? PartAt(Point point) => _callouts.IdAt(point);
+
+    public override string Describe(string? part) =>
+        Image.Callouts?.FirstOrDefault(c => c.Id == part) is { } callout
+            ? callout.Label
+            : Image.Alt ?? Image.Caption ?? "this image";
 
     protected override async Task LoadAsync(Element element, CancellationToken cancellationToken)
     {

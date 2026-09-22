@@ -198,8 +198,11 @@ public static partial class SpecValidator
         return element switch
         {
             ImageElement image => image.Callouts?.Select(c => c.Id).ToList() ?? [],
-            GalleryElement gallery => gallery.Items?.Select((item, i) => item.Id ?? $"item{i + 1}").ToList(),
-            TableElement table => null,
+            // A folder's photos are named after files nobody has listed yet.
+            GalleryElement gallery => string.IsNullOrWhiteSpace(gallery.Folder)
+                ? ElementParts.GalleryItems(gallery.Items ?? [], new HashSet<string>(StringComparer.Ordinal)).ToList()
+                : null,
+            TableElement table => ElementParts.TableRows(table).ToList(),
             MarkdownElement => null,
             DiagramElement => null,
             _ => [],
