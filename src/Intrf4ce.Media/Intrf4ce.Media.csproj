@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Voices, audio and images: text-to-speech engines and their clip cache, playback, EXIF,
+    and fetching remote images into a deck. No Avalonia.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Intrf4ce.Media</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MetadataExtractor" />
+    <PackageReference Include="SoundFlow" />
+    <!-- Windows only. Every call site is behind OperatingSystem.IsWindows(); CA1416 enforces it. -->
+    <PackageReference Include="System.Speech" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Intrf4ce.Core\Intrf4ce.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Intrf4ce.Tests" />
+  </ItemGroup>
+
+</Project>

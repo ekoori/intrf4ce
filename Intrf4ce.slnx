@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Intrf4ce.Agent/Intrf4ce.Agent.csproj" />
+    <Project Path="src/Intrf4ce.App/Intrf4ce.App.csproj" />
+    <Project Path="src/Intrf4ce.Core/Intrf4ce.Core.csproj" />
+    <Project Path="src/Intrf4ce.Media/Intrf4ce.Media.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Intrf4ce.Tests/Intrf4ce.Tests.csproj" />
+  </Folder>
+</Solution>

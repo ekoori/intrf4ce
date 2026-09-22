@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Everything that talks to an agent: the MCP server and its tools, the pipe transport, the
+    stdio shim, and the hosted Claude Code bridge. No Avalonia; the app is reached through
+    interfaces declared in Core, so the protocol is testable against fakes.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Intrf4ce.Agent</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The tool schemas and the presenter guide are reviewed as documents, not generated. -->
+    <EmbeddedResource Include="Resources\**" LogicalName="Intrf4ce.Agent.%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Intrf4ce.Core\Intrf4ce.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Intrf4ce.Tests" />
+  </ItemGroup>
+
+</Project>

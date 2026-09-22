@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      WinExe so a double-click does not flash a console. The stdio shim mode still works: an
+      agent that spawns it passes pipe handles for stdin and stdout, and a GUI-subsystem
+      process uses inherited handles exactly as a console one does.
+    -->
+    <OutputType>WinExe</OutputType>
+    <AssemblyTitle>intrf4ce</AssemblyTitle>
+    <RootNamespace>Intrf4ce.App</RootNamespace>
+    <AssemblyName>intrf4ce</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win'))">
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <!--
+    One self-contained executable per platform. Trimming is off and must stay off: tool
+    handlers and element views are found through registries built by reflection-free code
+    today, but the web renderer's COM interop and Svg.Skia's model both reflect, and a
+    trimmed build fails at runtime rather than at build.
+  -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <DebugType>embedded</DebugType>
+    <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+    <!--
+      The renderer's page and the vendored libraries travel inside the executable and are
+      injected into the hidden web view as script, so no file ever has to be unpacked and
+      no platform's file:// rules come into it.
+    -->
+    <EmbeddedResource Include="Web\**\*.js;Web\**\*.html" LogicalName="Intrf4ce.Web.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Controls.WebView" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="Svg.Skia" />
+    <PackageReference Include="Markdig" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!--
+    Native .pdb files from SkiaSharp and HarfBuzz arrive through a different item group than
+    managed symbols and would otherwise ship beside the executable (Fjord measured 100 MB).
+  -->
+  <Target Name="DropSymbolsFromPublish" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish
+          Remove="@(ResolvedFileToPublish)"
+          Condition="'%(Extension)' == '.pdb' or '%(Extension)' == '.xml'" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Intrf4ce.Agent\Intrf4ce.Agent.csproj" />
+    <ProjectReference Include="..\Intrf4ce.Core\Intrf4ce.Core.csproj" />
+    <ProjectReference Include="..\Intrf4ce.Media\Intrf4ce.Media.csproj" />
+  </ItemGroup>
+
+</Project>

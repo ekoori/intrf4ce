@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Pure logic: the deck model and its validation, narration cues and timing, and the
+    geometry of layout. Must never reference Avalonia, so that everything the agent can get
+    wrong is testable without a window.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Intrf4ce.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Intrf4ce.Tests" />
+  </ItemGroup>
+
+</Project>

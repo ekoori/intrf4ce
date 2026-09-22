@@ -1,0 +1,25 @@
+## .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+
+## Rider / VS / VS Code
+.idea/
+.vs/
+.vscode/
+
+## Test / scratch
+*.received.*
+TestResults/
+
+## Local publish output
+dist/
+
+## Never commit a voice key. The app keeps it in the platform config directory, not here,
+## but a copy dropped into the repository while debugging must not be staged either.
+secrets.yaml
+*.secrets.yaml
+.env

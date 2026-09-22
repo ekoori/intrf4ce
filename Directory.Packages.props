@@ -1,0 +1,51 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="UI">
+    <PackageVersion Include="Avalonia" Version="12.0.5" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.0.5" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.0.5" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.0.5" />
+    <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
+    <!--
+      The hidden renderer. MIT, maintained by AvaloniaUI, and it wraps each platform's own
+      engine (WebView2, WKWebView, WPE/WebKitGTK) behind one API, which is what makes the
+      Mermaid/MathJax/Vega path portable at all.
+    -->
+    <PackageVersion Include="Avalonia.Controls.WebView" Version="12.1.0" />
+    <!--
+      Must stay on the SkiaSharp line Avalonia itself uses (3.119.x for Avalonia 12.0).
+      Svg.Skia 5.2 moved to SkiaSharp 4.148, which Avalonia.Skia 12 was not built against;
+      5.1.1 is the newest release that shares Avalonia's SkiaSharp.
+    -->
+    <PackageVersion Include="SkiaSharp" Version="3.119.4" />
+    <PackageVersion Include="Svg.Skia" Version="5.1.1" />
+    <PackageVersion Include="Markdig" Version="1.4.0" />
+  </ItemGroup>
+
+  <!--
+    CommunityToolkit.Mvvm and Microsoft.Extensions.DependencyInjection are absent on
+    purpose, as in Fjord: there is no MVVM and no container, and a version listed here only
+    invites someone to add the reference because it looks sanctioned.
+  -->
+  <ItemGroup Label="Infrastructure">
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
+    <PackageVersion Include="MetadataExtractor" Version="2.9.3" />
+    <PackageVersion Include="SoundFlow" Version="1.4.1" />
+    <PackageVersion Include="System.Speech" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="FsCheck.Xunit" Version="3.3.0" />
+    <PackageVersion Include="Xunit.SkippableFact" Version="1.5.23" />
+  </ItemGroup>
+
+</Project>

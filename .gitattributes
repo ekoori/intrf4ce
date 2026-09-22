@@ -1,0 +1,26 @@
+# Normalise line endings in the repository to LF, set before the first code commit so that
+# history never has to be rewritten to fix it. Same policy as Fjord and Kompas.
+* text=auto eol=lf
+
+# Windows-only files that genuinely need CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary, never touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.mp3 binary
+*.wav binary
+*.pdf binary
+*.zip binary
+*.dll binary
+*.exe binary
+
+# Vendored, minified browser libraries (see VENDORED.md). A one-line 5 MB diff helps nobody,
+# so git reports them as changed without printing them.
+src/Intrf4ce.App/Web/vendor/*.js -diff linguist-vendored
+
+*.slnx text eol=lf
