@@ -3,7 +3,7 @@ namespace Intrf4ce.Core;
 /// <summary>Where intrf4ce keeps things, per platform convention.</summary>
 /// <param name="Config">settings.yaml and secrets.yaml.</param>
 /// <param name="Cache">Voice clips, render cache, logs: all rebuildable.</param>
-/// <param name="Library">Decks. Under Documents, because they are the user's work.</param>
+/// <param name="Library">Sessions: a folder per presentation, with the media it uses.</param>
 public sealed record AppPaths(string Config, string Cache, string Library)
 {
     /// <summary>Set to a folder to keep everything under it: tests, and a second instance beside a real one.</summary>
@@ -26,6 +26,48 @@ public sealed record AppPaths(string Config, string Cache, string Library)
     public static AppPaths Under(string root) =>
         new(Path.Combine(root, "config"), Path.Combine(root, "cache"), Path.Combine(root, "library"));
 
+    /// <summary>The folder a deck made before sessions lived beside the executable would be in.</summary>
+    public static string LegacyLibrary
+    {
+        get
+        {
+            var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            if (string.IsNullOrEmpty(documents))
+            {
+                documents = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Documents");
+            }
+
+            return Path.Combine(documents, "intrf4ce");
+        }
+    }
+
+    /// <summary>
+    /// <c>sessions</c> beside the executable, so a presentation and the media it uses travel
+    /// together and a copied folder still works; the user's documents when that folder cannot be
+    /// written, which is what happens when the app is installed somewhere read-only.
+    /// </summary>
+    private static string SessionsFolder(string documents)
+    {
+        if (Path.GetDirectoryName(Environment.ProcessPath) is { Length: > 0 } beside)
+        {
+            var sessions = Path.Combine(beside, "sessions");
+            try
+            {
+                Directory.CreateDirectory(sessions);
+                var probe = Path.Combine(sessions, ".writable");
+                File.WriteAllText(probe, "");
+                File.Delete(probe);
+                return sessions;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                // Program Files, a read-only mount, a network share without write: fall back.
+            }
+        }
+
+        return Path.Combine(documents, "intrf4ce");
+    }
+
     private static AppPaths Resolve()
     {
         if (Environment.GetEnvironmentVariable(HomeVariable) is { Length: > 0 } home)
@@ -39,7 +81,7 @@ public sealed record AppPaths(string Config, string Cache, string Library)
             documents = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Documents");
         }
 
-        var library = Path.Combine(documents, "intrf4ce");
+        var library = SessionsFolder(documents);
 
         if (OperatingSystem.IsWindows())
         {

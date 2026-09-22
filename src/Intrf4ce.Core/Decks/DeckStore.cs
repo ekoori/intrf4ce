@@ -28,6 +28,57 @@ public sealed class DeckStore
 
     public string AssetsOf(string deckId) => Path.Combine(FolderOf(deckId), "assets");
 
+    /// <summary>
+    /// Brings decks made before sessions lived beside the executable across.
+    /// </summary>
+    /// <remarks>
+    /// Only when this library has none of its own, and by moving rather than copying: two
+    /// copies of a presentation would drift apart, and the user would have no way of telling
+    /// which one an agent was changing.
+    /// </remarks>
+    /// <returns>How many were moved.</returns>
+    public int AdoptFrom(string legacy, Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(legacy) || Path.GetFullPath(legacy) == Path.GetFullPath(Root)
+            || !Directory.Exists(legacy) || List().Count > 0)
+        {
+            return 0;
+        }
+
+        var moved = 0;
+        foreach (var folder in Directory.EnumerateDirectories(legacy))
+        {
+            if (!File.Exists(Path.Combine(folder, DeckFile)))
+            {
+                continue;
+            }
+
+            var target = Path.Combine(Root, Path.GetFileName(folder));
+            if (Directory.Exists(target))
+            {
+                continue;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(Root);
+                Directory.Move(folder, target);
+                moved++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                log?.Invoke($"could not move {folder} into {Root}: {ex.Message}");
+            }
+        }
+
+        if (moved > 0)
+        {
+            log?.Invoke($"moved {moved} deck(s) from {legacy} into {Root}");
+        }
+
+        return moved;
+    }
+
     public IReadOnlyList<DeckInfo> List()
     {
         if (!Directory.Exists(Root))

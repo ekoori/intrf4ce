@@ -53,9 +53,10 @@ element, `[[clear]]` returns to the whole slide.
 | `↑` `↓` | step through the parts of a slide (callouts, diagram steps, rows) |
 | `Home` `End` | first, last slide |
 | `O` | overview of the whole deck |
-| `L` | library: every deck on disk |
+| `L` | sessions: every presentation on disk |
 | `T` | show or hide the conversation panel |
 | `Space` | play or pause the narration |
+| `X` | stop: no voice, and no slide moves on by itself |
 | `M` `S` | mute, subtitles |
 | `Enter` or `/` | write to the agent |
 | `+` `-` `0` | zoom in, out, back to the slide |
@@ -65,6 +66,9 @@ element, `[[clear]]` returns to the whole slide.
 With the mouse: the wheel zooms, dragging pans, clicking a callout, a node, a photo or a row
 focuses it (and again goes back), double-clicking reframes the slide, and right-clicking anything
 offers **Ask about this**, which sends your question to the agent along with what you pointed at.
+The buttons in the bottom-left corner of the stage do the same as the keys: previous, play or
+pause, stop, next. Stop means stopped — the voice goes quiet and nothing advances until you
+press play, however much the agent adds in the meantime.
 
 ## Settings
 
@@ -76,10 +80,16 @@ offers **Ask about this**, which sends your question to the agent along with wha
 | macOS | `~/Library/Application Support/intrf4ce/settings.yaml` |
 | Linux | `$XDG_CONFIG_HOME/intrf4ce/settings.yaml` (or `~/.config/intrf4ce`) |
 
-Decks are folders under `Documents/intrf4ce`, each holding `deck.json` and its assets; voice
-clips, renders and logs are cache (`%LOCALAPPDATA%\intrf4ce` on Windows) and can be deleted at
-any time. `INTRF4CE_HOME=<folder>` puts all three under one folder, which is how the tests run a
-second instance beside a real one.
+**Sessions.** Each presentation is a folder under `sessions`, beside the executable, holding its
+`deck.json` and every image it uses — pictures from the web and files from your own disk are both
+copied in — so the folder can be moved to another machine and still present. They are listed on
+the left (`L`): open one and it comes back where it was, with the agent returned to the
+conversation that built it, free to carry on or rewrite it. If the folder beside the executable
+cannot be written (installed under Program Files, say), sessions fall back to `Documents/intrf4ce`,
+and decks made before this lived there are moved across on first run. Voice clips, renders and
+logs are cache (`%LOCALAPPDATA%\intrf4ce` on Windows) and can be deleted at any time.
+`INTRF4CE_HOME=<folder>` puts config, cache and sessions under one folder, which is how the tests
+run a second instance beside a real one.
 
 Saving the file applies what can change immediately — voice, pacing, volume, subtitles, animation
 speed. Changing the agent or the engine tells you it needs a restart.

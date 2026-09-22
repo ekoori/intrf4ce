@@ -60,6 +60,28 @@ public sealed class ImageLoader(AssetFetcher fetcher, DeckService decks)
         }
     }
 
+    /// <summary>
+    /// Sources under <paramref name="folder"/> this session has already copied, oldest name
+    /// first: what a gallery can still show when the folder it was built from is not there,
+    /// which is what happens when the session is opened on another machine.
+    /// </summary>
+    public IReadOnlyList<string> RecordedUnder(string folder)
+    {
+        ArgumentNullException.ThrowIfNull(folder);
+
+        if (decks.Current is not { } deck)
+        {
+            return [];
+        }
+
+        var prefix = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar;
+        return [.. deck.Assets.Keys
+            .Where(source => !AssetFetcher.IsUrl(source)
+                && source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && File.Exists(Path.Combine(decks.Store.FolderOf(deck.Id), deck.Assets[source])))
+            .OrderBy(source => source, StringComparer.OrdinalIgnoreCase)];
+    }
+
     private static LoadedImage Decode(string path, int maxSide)
     {
         if (Path.GetExtension(path).Equals(".svg", StringComparison.OrdinalIgnoreCase))

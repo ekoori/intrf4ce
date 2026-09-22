@@ -313,5 +313,15 @@ table rows and a folder's photos — which are slugs ("Knee joint" is `knee-join
 is `img-2031`) so the validator can check a cue before anything is drawn.
 | **M4 Cross-platform and polish** | `say`, espeak and Piper engines; Linux container smoke test; channels; overview; library; settings hot reload; four-RID packaging; README |
 
+### Asked for, not yet built
+
+- **A map element.** Google Maps or Earth, or OpenStreetMap, so a presentation can travel
+  between places: a route, a region outlined, a camera flight from one location to the next with
+  the narration. It fits the existing shape — an element the agent describes (centre, zoom,
+  markers, outlines, a path) with its own parts to focus, `[[focus map.venice]]` — and the
+  question to settle first is the renderer: raster tiles drawn natively (no key, works offline
+  once cached, OSM's terms) against an embedded map in the hidden web view (Google's imagery and
+  3D, but a key, a licence and a live connection).
+
 Not in v1 (YAGNI until asked): video, embedded live web pages, a native "exploded layers"
-element, map view for GPS photos, collaborative decks, export to PPTX/PDF.
+element, collaborative decks, export to PPTX/PDF.

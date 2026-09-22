@@ -346,13 +346,26 @@ public sealed class GalleryView : ElementView
             var folder = ExpandFolder(gallery.Folder);
             if (!Directory.Exists(folder))
             {
-                if (photos.Count == 0)
+                // The folder is gone, but its photographs were copied into the session when the
+                // slide was built, so the presentation still has them.
+                var kept = Context.Images.RecordedUnder(folder);
+                if (kept.Count > 0)
+                {
+                    Warn($"there is no folder at {folder} any more; showing the {kept.Count} photos kept with this session");
+                    foreach (var source in kept)
+                    {
+                        photos.Add(new Photo(ElementParts.Photo(Path.GetFileName(source), used), source, null, null));
+                    }
+                }
+                else if (photos.Count == 0)
                 {
                     Fail($"there is no folder at {folder}");
                     return [];
                 }
-
-                Warn($"there is no folder at {folder}; showing the items only");
+                else
+                {
+                    Warn($"there is no folder at {folder}; showing the items only");
+                }
             }
             else
             {

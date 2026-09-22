@@ -39,12 +39,30 @@ public sealed class AssetFetcher(HttpClient http)
     public static bool IsUrl(string source) =>
         source.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || source.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>The file for <paramref name="source"/>, downloading it into the deck's assets folder if needed.</summary>
-    /// <returns>The absolute path, and for downloads the path relative to the deck folder to record.</returns>
+    /// <summary>
+    /// The file for <paramref name="source"/>, brought into the session's own folder: downloaded
+    /// if it is a URL, copied if it is a file somewhere else on the machine.
+    /// </summary>
+    /// <remarks>
+    /// A session is meant to be self-contained — the folder can be copied to another machine and
+    /// still present — so the photograph an agent put on a slide cannot stay behind in whatever
+    /// folder it came from. The source is kept exactly as the agent wrote it and the copy is
+    /// recorded against it, so the same file is never fetched or copied twice.
+    /// </remarks>
+    /// <returns>The absolute path, and the path relative to the deck folder to record.</returns>
     public async Task<(string Path, string? Relative)> ResolveAsync(
         string source, string? recorded, string deckFolder, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
+
+        if (recorded is not null)
+        {
+            var existing = Path.GetFullPath(Path.Combine(deckFolder, recorded));
+            if (File.Exists(existing))
+            {
+                return (existing, recorded);
+            }
+        }
 
         if (!IsUrl(source))
         {
@@ -58,30 +76,40 @@ public sealed class AssetFetcher(HttpClient http)
                 path = Path.Combine(deckFolder, path);
             }
 
-            return File.Exists(path)
-                ? (Path.GetFullPath(path), null)
-                : throw new FileNotFoundException($"no file at {path}");
-        }
-
-        if (recorded is not null)
-        {
-            var existing = Path.GetFullPath(Path.Combine(deckFolder, recorded));
-            if (File.Exists(existing))
+            path = Path.GetFullPath(path);
+            if (!File.Exists(path))
             {
-                return (existing, recorded);
+                throw new FileNotFoundException($"no file at {path}");
             }
+
+            // Already inside the session: leave it where it is.
+            if (path.StartsWith(Path.GetFullPath(deckFolder) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return (path, null);
+            }
+
+            var copy = Beside(deckFolder, source, Path.GetExtension(path));
+            Directory.CreateDirectory(Path.GetDirectoryName(copy.Target)!);
+            File.Copy(path, copy.Target, overwrite: true);
+            return (copy.Target, copy.Relative);
         }
 
         var (bytes, extension) = await DownloadAsync(source, cancellationToken).ConfigureAwait(false);
 
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)))[..12].ToLowerInvariant();
-        var name = Slug.From(Path.GetFileNameWithoutExtension(new Uri(source).AbsolutePath), "image", 40);
-        var relative = Path.Combine("assets", $"{hash}-{name}{extension}");
-        var target = Path.Combine(deckFolder, relative);
+        var download = Beside(deckFolder, source, extension);
+        Directory.CreateDirectory(Path.GetDirectoryName(download.Target)!);
+        await File.WriteAllBytesAsync(download.Target, bytes, cancellationToken).ConfigureAwait(false);
+        return (download.Target, download.Relative);
+    }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        await File.WriteAllBytesAsync(target, bytes, cancellationToken).ConfigureAwait(false);
-        return (target, relative.Replace('\\', '/'));
+    /// <summary>Where a copy of <paramref name="source"/> goes inside the session, named after it.</summary>
+    private static (string Target, string Relative) Beside(string deckFolder, string source, string extension)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)))[..12].ToLowerInvariant();
+        var stem = IsUrl(source) ? new Uri(source).AbsolutePath : source;
+        var name = Slug.From(Path.GetFileNameWithoutExtension(stem), "image", 40);
+        var relative = Path.Combine("assets", $"{hash}-{name}{extension}");
+        return (Path.Combine(deckFolder, relative), relative.Replace('\\', '/'));
     }
 
     public async Task<(byte[] Bytes, string Extension)> DownloadAsync(string url, CancellationToken cancellationToken)

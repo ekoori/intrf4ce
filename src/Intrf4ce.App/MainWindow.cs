@@ -48,11 +48,13 @@ public sealed class MainWindow : Window
     private readonly Grid _root;
     private readonly HeaderBar _header;
     private readonly ConversationPanel _chat;
-    private readonly LibraryPanel _library;
+    private readonly TransportBar _transport;
+    private readonly SessionsPanel _sessions;
     private readonly AppSettings _settings;
     private readonly SettingsWatcher? _watcher;
     private readonly WelcomePanel _welcome;
     private AskSubject? _asking;
+    private string? _resumed;
     private int _toolCalls;
 
     public MainWindow(AppPaths paths, AppSettings settings, string? settingsError)
@@ -70,7 +72,9 @@ public sealed class MainWindow : Window
 
         // ---- services
         var library = settings.Library.Folder is { Length: > 0 } folder ? folder : paths.Library;
-        _decks = new DeckService(new DeckStore(library));
+        var store = new DeckStore(library);
+        store.AdoptFrom(AppPaths.LegacyLibrary, Log.Write);
+        _decks = new DeckService(store);
         _http = AssetFetcher.CreateClient();
         var fetcher = new AssetFetcher(_http);
         var images = new ImageLoader(fetcher, _decks);
@@ -107,7 +111,8 @@ public sealed class MainWindow : Window
         // ---- view
         _header = new HeaderBar(_theme);
         _chat = new ConversationPanel(_theme);
-        _library = new LibraryPanel(_theme);
+        _transport = new TransportBar(_theme);
+        _sessions = new SessionsPanel(_theme);
         _welcome = new WelcomePanel(_theme);
         _subtitles = new SubtitleBar(_theme);
         _narrator = new Narrator(_voices, _audio, _controller, _subtitles, _chat.Orb, settings.Narration);
@@ -136,17 +141,24 @@ public sealed class MainWindow : Window
         presentation.Children.Add(_welcome);
         presentation.Children.Add(_header);
         presentation.Children.Add(_subtitles);
-        presentation.Children.Add(_library);
+        presentation.Children.Add(_transport);
 
-        _root.ColumnDefinitions = new ColumnDefinitions("*,Auto");
-        Grid.SetColumn(presentation, 0);
-        Grid.SetColumn(_chat, 1);
+        // Sessions on the left, the stage in the middle, the conversation on the right.
+        _root.ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto");
+        Grid.SetColumn(_sessions, 0);
+        Grid.SetColumn(presentation, 1);
+        Grid.SetColumn(_chat, 2);
+        _root.Children.Add(_sessions);
         _root.Children.Add(presentation);
         _root.Children.Add(_chat);
         Content = _root;
 
         // A share of the window, within reason: wide enough to read, never half the stage.
-        SizeChanged += (_, e) => _chat.SetPreferredWidth(Math.Clamp(e.NewSize.Width * 0.27, 300, 460));
+        SizeChanged += (_, e) =>
+        {
+            _chat.SetPreferredWidth(Math.Clamp(e.NewSize.Width * 0.27, 300, 460));
+            _sessions.SetPreferredWidth(Math.Clamp(e.NewSize.Width * 0.19, 240, 340));
+        };
 
         // ---- wiring
         _controller.Changed += (_, _) => UpdateHud();
@@ -169,7 +181,32 @@ public sealed class MainWindow : Window
         _chat.Submitted += (_, text) => OnChat(text);
         _chat.Dismissed += (_, _) => _stage.Focus();
         _chat.ContextCleared += (_, _) => _asking = null;
-        _library.Picked += (_, id) => OpenDeck(id);
+
+        _transport.Previous += (_, _) => _controller.Previous();
+        _transport.Next += (_, _) => _controller.Next();
+        _transport.PlayPause += (_, _) =>
+        {
+            _narrator.Play(_controller.CurrentSlide);
+            UpdateHud();
+        };
+
+        _transport.Stop += (_, _) =>
+        {
+            _narrator.Hold();
+            UpdateHud();
+        };
+        _sessions.Picked += (_, id) => OpenDeck(id);
+        _decks.Changed += (_, e) => Dispatcher.UIThread.Post(
+            () =>
+            {
+                ListSessions();
+                if (e.Kind == DeckChangeKind.Opened)
+                {
+                    // Something is on the stage now; that is what the window is for.
+                    _sessions.Collapse(true);
+                }
+            },
+            DispatcherPriority.Background);
 
         _server.ActivateRequested += (_, _) => Dispatcher.UIThread.Post(BringForward);
         _server.SessionsChanged += (_, _) => Dispatcher.UIThread.Post(UpdateHud);
@@ -223,6 +260,10 @@ public sealed class MainWindow : Window
 
         _agent?.Start(null);
 
+        // Nothing on the stage yet: the presentations already made are the first thing to see.
+        ListSessions();
+        _sessions.Collapse(_decks.Current is not null);
+
         if (settingsError is not null)
         {
             _chat.AddMessage(fromUser: false, $"settings.yaml: {settingsError}", isError: true);
@@ -231,17 +272,33 @@ public sealed class MainWindow : Window
         _stage.Focus();
     }
 
-    /// <summary>Opens a deck the user picked, and moves the agent to the conversation that built it.</summary>
+    /// <summary>What is on disk, newest first.</summary>
+    private void ListSessions() => _sessions.Show(_decks.Store.List(), _decks.Current?.Id);
+
+    /// <summary>
+    /// Opens a session the user picked: the deck comes back, the agent goes back to the
+    /// conversation that built it, and it is told what it is now looking at so it can carry on
+    /// or rework the whole thing.
+    /// </summary>
     private void OpenDeck(string id)
     {
         try
         {
             var deck = _decks.Open(id);
+            _sessions.Collapse(true);
             _stage.Focus();
             if (_agent is not null && deck.AgentSession is { Length: > 0 } session)
             {
                 _ = _agent.SwitchToAsync(session);
             }
+
+            // Kept for the next thing the user says rather than sent now: an agent woken by
+            // the mere opening of a session would answer a question nobody asked, and a turn
+            // costs the user whether or not it was wanted.
+            var slides = string.Join(", ", deck.Slides.Take(12).Select(s => s.Id));
+            _resumed = $"<intrf4ce-resumed deck=\"{deck.Id}\" slides=\"{deck.Count}\">The user reopened \"{deck.Title}\""
+                + $" ({slides}). Call get_state to see it as it stands; any of it can be changed."
+                + "</intrf4ce-resumed>\n";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {
@@ -312,15 +369,23 @@ public sealed class MainWindow : Window
 
         // Plain chat goes to the agent as the user typed it; the context rides along only
         // where there is a channel for it, so the hosted agent's messages read naturally.
-        _events.Publish("chat", text, _agent?.IsRunning == true ? null : meta);
+        _events.Publish("chat", Resumption() + text, _agent?.IsRunning == true ? null : meta);
         ShowSent();
     }
 
     /// <summary>Something the user did on the stage (a quiz answer, a question about a part), for the agent.</summary>
     private void PublishFromStage(string type, string text, IReadOnlyDictionary<string, string> meta)
     {
-        _events.Publish(type, text, meta);
+        _events.Publish(type, Resumption() + text, meta);
         ShowSent();
+    }
+
+    /// <summary>The note about a reopened session, once, in front of whatever the user says next.</summary>
+    private string Resumption()
+    {
+        var note = _resumed;
+        _resumed = null;
+        return note ?? "";
     }
 
     private void ShowSent()
@@ -470,6 +535,9 @@ public sealed class MainWindow : Window
                 attached.Count > 0 ? null : $"claude mcp add intrf4ce -- \"{Environment.ProcessPath}\" --mcp");
         }
 
+        _transport.Update(_narrator.IsSpeaking, _narrator.Held, _narrator.State);
+        _transport.IsVisible = deck is { Count: > 0 };
+
         var busy = _agent?.Status is AgentStatus.Working or AgentStatus.Starting;
         _chat.Orb.Mood = _agent?.Status == AgentStatus.Failed ? OrbMood.Error
             : _narrator.IsSpeaking ? OrbMood.Speaking
@@ -490,8 +558,8 @@ public sealed class MainWindow : Window
             return;
         }
 
-        // The library takes the arrow keys and Enter while it is open.
-        if (_library.Handle(e.Key))
+        // The sessions list takes the arrow keys and Enter while it is open.
+        if (_sessions.Handle(e.Key))
         {
             e.Handled = true;
             return;
@@ -555,13 +623,10 @@ public sealed class MainWindow : Window
                 break;
 
             case Key.L:
-                if (_library.IsVisible)
+                _sessions.Collapse(!_sessions.Collapsed);
+                if (!_sessions.Collapsed)
                 {
-                    _library.Hide();
-                }
-                else
-                {
-                    _library.Show(_decks.Store.List(), _decks.Current?.Id);
+                    ListSessions();
                 }
 
                 break;
@@ -591,7 +656,13 @@ public sealed class MainWindow : Window
                 break;
 
             case Key.Space:
-                _narrator.Toggle(_controller.CurrentSlide);
+                _narrator.Play(_controller.CurrentSlide);
+                UpdateHud();
+                break;
+
+            // The presentation stops where it is: no voice, and no slide moves on by itself.
+            case Key.X:
+                _narrator.Hold();
                 UpdateHud();
                 break;
 

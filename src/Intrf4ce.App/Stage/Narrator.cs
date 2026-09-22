@@ -70,14 +70,39 @@ public sealed class Narrator
     /// <summary>Speaking started or stopped; for the orb and get_state.</summary>
     public event EventHandler? StateChanged;
 
-    /// <summary>idle, preparing, speaking, paused or waiting.</summary>
-    public string State => _waitingForNext ? "waiting for the next slide"
+    /// <summary>stopped, idle, preparing, speaking, paused or waiting.</summary>
+    public string State => Held ? "stopped by the user"
+        : _waitingForNext ? "waiting for the next slide"
         : _preparing is not null && _now is null ? "preparing the voice"
         : _now is null ? "idle"
         : _now.Paused ? "paused"
         : "speaking";
 
     public bool IsSpeaking => _now is { Paused: false };
+
+    /// <summary>The user stopped the presentation: nothing speaks and no slide moves on by itself.</summary>
+    /// <remarks>
+    /// Distinct from a pause, which holds one narration where it is. Held survives moving
+    /// between slides, so the user can read through a deck at their own pace with the voice off
+    /// and nothing running away from them.
+    /// </remarks>
+    public bool Held { get; private set; }
+
+    /// <summary>Stop: silence, and no slide advances until the user presses play.</summary>
+    public void Hold()
+    {
+        Held = true;
+        Stop();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The play button: speak this slide, resuming whatever was paused or stopped.</summary>
+    public void Play(Slide? current)
+    {
+        Held = false;
+        Toggle(current);
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>A slide came into view: speak it if autoplay is on.</summary>
     public void SlideShown(Slide? slide, bool play = true)
@@ -91,7 +116,7 @@ public sealed class Narrator
             return;
         }
 
-        if (play && _settings.Autoplay && !string.IsNullOrWhiteSpace(slide.Narration))
+        if (play && !Held && _settings.Autoplay && !string.IsNullOrWhiteSpace(slide.Narration))
         {
             _ = PerformAsync(slide.Narration!, slide);
         }
@@ -103,7 +128,7 @@ public sealed class Narrator
     /// </summary>
     public void SlideUpdated(Slide slide)
     {
-        if (_now is not null || _preparing is not null || !_settings.Autoplay || string.IsNullOrWhiteSpace(slide.Narration))
+        if (Held || _now is not null || _preparing is not null || !_settings.Autoplay || string.IsNullOrWhiteSpace(slide.Narration))
         {
             return;
         }
@@ -197,7 +222,7 @@ public sealed class Narrator
     /// <summary>A slide arrived; if the last one finished and was waiting for it, move on.</summary>
     public void SlidesChanged()
     {
-        if (_waitingForNext && _stage.Deck is { } deck && _stage.CurrentIndex < deck.Count - 1)
+        if (!Held && _waitingForNext && _stage.Deck is { } deck && _stage.CurrentIndex < deck.Count - 1)
         {
             _waitingForNext = false;
             _stage.Next();
@@ -394,7 +419,7 @@ public sealed class Narrator
         }
 
         // A quiz waits for its answer unless the agent said otherwise.
-        if (now.Slide is { } slide
+        if (!Held && now.Slide is { } slide
             && (slide.Advance ?? (slide.Elements.Any(e => e is QuizElement) ? "manual" : _settings.Advance)) == "auto")
         {
             _advance?.Dispose();

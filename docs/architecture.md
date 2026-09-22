@@ -55,6 +55,19 @@ way a browser does.
 Part boxes (a Mermaid node's rectangle) are measured in the browser and returned with the SVG,
 which is what makes `[[focus flow.B]]` possible.
 
+## Sessions
+
+A session is a folder under `sessions`, beside the executable: `deck.json` plus `assets/` holding
+every image the presentation uses. Anything an agent puts on a slide is brought inside — a URL is
+downloaded, a file from elsewhere on the machine is copied — and the deck records where each
+source landed, so nothing is fetched twice and the folder still presents on a machine that has
+never seen the original. A gallery whose folder has since gone falls back to the copies the
+session kept.
+
+Reopening one restores the deck, puts the hosted agent back on the conversation that built it
+(the session id is kept on the deck), and sends the agent a `resume` event so it knows what it
+is looking at before the user asks for anything.
+
 ## Decks
 
 A deck is a folder: `deck.json` plus the assets an agent downloaded. `DeckService` holds one
