@@ -77,7 +77,7 @@ public class LayoutTests
         Assert.Equal(new Box(800, 450, 400, 225), SlideLayout.Arrange(slide)["a"]);
     }
 
-    [Property(MaxTest = 300)]
+    [Property(MaxTest = 5000)]
     public Property CalloutLabelsNeverOverlapAndLeadersNeverCross(NonEmptyArray<(NormalFloat X, NormalFloat Y)> anchors)
     {
         var image = new Box(300, 40, 600, 700);

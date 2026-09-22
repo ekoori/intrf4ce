@@ -133,11 +133,13 @@ public static class CalloutLayout
         var desired = sorted.Select(c => Target(c).Y).ToArray();
         var (centers, overflowed) = Slots(desired, heights, bounds.Y, bounds.Bottom);
 
-        // The column labels align to, and the x where each leader leaves its label.
+        // The column labels align to, and the column of elbows where every leader's diagonal
+        // starts. Crossings are judged from the elbows, because that is the segment drawn.
         var column = isLeft ? image.X - Margin : image.Right + Margin;
+        var elbowX = isLeft ? column + (Margin * 0.45) : column - (Margin * 0.45);
         var assignment = Enumerable.Range(0, sorted.Count).ToArray();
 
-        Uncross(sorted, assignment, centers, column);
+        Uncross(sorted, assignment, centers, elbowX);
 
         for (var slot = 0; slot < sorted.Count; slot++)
         {
@@ -151,7 +153,7 @@ public static class CalloutLayout
 
             var label = new Box(x, y, width, height);
             var port = new Pt(column, centers[slot]);
-            var elbow = new Pt(isLeft ? column + (Margin * 0.45) : column - (Margin * 0.45), centers[slot]);
+            var elbow = new Pt(elbowX, centers[slot]);
             var end = EndPoint(callout, elbow);
 
             placements.Add(new CalloutPlacement(callout.Id, isLeft ? "left" : "right", label, [port, elbow, end]));
@@ -195,7 +197,7 @@ public static class CalloutLayout
         return (centers, overflowed);
     }
 
-    private static void Uncross(List<CalloutInput> sorted, int[] assignment, double[] centers, double column)
+    private static void Uncross(List<CalloutInput> sorted, int[] assignment, double[] centers, double elbowX)
     {
         var limit = sorted.Count * sorted.Count * 4;
         bool swapped;
@@ -207,10 +209,10 @@ public static class CalloutLayout
             {
                 for (var b = a + 1; b < sorted.Count && limit > 0; b++)
                 {
-                    var pa = new Pt(column, centers[a]);
-                    var pb = new Pt(column, centers[b]);
-                    var ta = Target(sorted[assignment[a]]);
-                    var tb = Target(sorted[assignment[b]]);
+                    var pa = new Pt(elbowX, centers[a]);
+                    var pb = new Pt(elbowX, centers[b]);
+                    var ta = EndPoint(sorted[assignment[a]], pa);
+                    var tb = EndPoint(sorted[assignment[b]], pb);
 
                     if (Segments.Cross(pa, ta, pb, tb))
                     {
