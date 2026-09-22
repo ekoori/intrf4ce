@@ -31,12 +31,17 @@ public sealed class StageView : Panel
     private TimeSpan _pathDuration;
     private bool _frameRequested;
 
-    public StageView()
+    public StageView(Skin skin)
     {
         ClipToBounds = true;
         _world.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Absolute);
+        Spotlight = new SpotlightOverlay(skin);
         Children.Add(_world);
+        Children.Add(Spotlight);
     }
+
+    /// <summary>Dims everything but the focused part; drawn over the world, under the HUD.</summary>
+    public SpotlightOverlay Spotlight { get; }
 
     /// <summary>Multiplies animation durations; 0 disables them.</summary>
     public double AnimationSpeed { get; set; } = 1;
@@ -119,6 +124,7 @@ public sealed class StageView : Panel
     protected override Size ArrangeOverride(Size finalSize)
     {
         _world.Arrange(new Rect(0, 0, 1, 1));
+        Spotlight.Arrange(new Rect(finalSize));
 
         // A resize keeps the same thing in view rather than the same zoom.
         if (_path is null && finalSize.Width > 0 && finalSize.Height > 0)
@@ -132,6 +138,7 @@ public sealed class StageView : Panel
     protected override Size MeasureOverride(Size availableSize)
     {
         _world.Measure(Size.Infinity);
+        Spotlight.Measure(availableSize);
         return availableSize;
     }
 
@@ -183,7 +190,9 @@ public sealed class StageView : Panel
     private void Apply(CameraView view, Size? size = null)
     {
         _view = view;
-        _world.RenderTransform = new MatrixTransform(view.ToMatrix(size ?? Bounds.Size));
+        var matrix = view.ToMatrix(size ?? Bounds.Size);
+        _world.RenderTransform = new MatrixTransform(matrix);
+        Spotlight.Follow(matrix);
     }
 
     private static double EaseInOut(double t) =>

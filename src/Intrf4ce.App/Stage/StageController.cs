@@ -50,6 +50,17 @@ public sealed class StageController : IStage
     /// <summary>Something to speak and subtitle; the narrator picks it up.</summary>
     public event EventHandler<string>? SayRequested;
 
+    /// <summary>A different slide is now the one being shown (null: none).</summary>
+    public event EventHandler<Slide?>? CurrentChanged;
+
+    /// <summary>The slide being shown was replaced by the agent.</summary>
+    public event EventHandler<Slide>? CurrentUpdated;
+
+    /// <summary>Slides were added, removed or moved.</summary>
+    public event EventHandler? SlidesChanged;
+
+    public Slide? CurrentSlide => _deck is not null && _current >= 0 && _current < _deck.Count ? _deck.Slides[_current] : null;
+
     public Deck? Deck => _deck;
 
     public int CurrentIndex => _current;
@@ -86,7 +97,9 @@ public sealed class StageController : IStage
         }
 
         index = Math.Clamp(index, 0, _deck.Count - 1);
-        var changed = index != _current || _overview;
+        var moved = index != _current;
+        var changed = moved || _overview;
+        ClearFocusMarks();
         _current = index;
         _overview = false;
         _focus = null;
@@ -96,6 +109,21 @@ public sealed class StageController : IStage
         if (changed)
         {
             Publish();
+        }
+
+        if (moved)
+        {
+            CurrentChanged?.Invoke(this, CurrentSlide);
+        }
+    }
+
+    /// <summary>Undoes what a focus left behind: the spotlight and highlighted callouts.</summary>
+    private void ClearFocusMarks()
+    {
+        _stage.Spotlight.Set([]);
+        foreach (var image in CurrentView?.Elements.OfType<ImageView>() ?? [])
+        {
+            image.Highlight(null);
         }
     }
 
@@ -107,6 +135,7 @@ public sealed class StageController : IStage
         }
 
         _overview = !_overview;
+        ClearFocusMarks();
         if (_overview)
         {
             _stage.FlyTo(StageView.DeckRect(_deck.Count), margin: 0.06);
@@ -151,6 +180,7 @@ public sealed class StageController : IStage
         if (target is null)
         {
             _focus = null;
+            ClearFocusMarks();
             _stage.FlyTo(StageView.SlideRect(_current), animate);
             Publish();
             return null;
@@ -184,9 +214,22 @@ public sealed class StageController : IStage
             return $"'{elementId}' has no part '{part}'" + (parts.Count > 0 ? $" (parts: {string.Join(", ", parts.Take(40))})." : ".");
         }
 
+        ClearFocusMarks();
         _focus = target;
         var origin = StageView.SlideRect(_current).Position + element.Bounds.Position;
         var world = new Rect(origin + local.Position, local.Size);
+
+        // The spotlight lights the part itself (and a callout's label), not the whole framing.
+        var holes = new List<Rect> { world };
+        if (part is not null && element is ImageView pictured && pictured.LabelBounds(part) is { } label)
+        {
+            holes.Add(new Rect(origin + label.Position, label.Size));
+        }
+
+        if (part is not null || region is not null)
+        {
+            _stage.Spotlight.Set(holes);
+        }
 
         // Keep some context around a small part; never zoom past a sensible magnification.
         var minimum = new Size(SlideLayout.Width * 0.3, SlideLayout.Height * 0.3);
@@ -196,7 +239,9 @@ public sealed class StageController : IStage
                 Math.Max(world.Width, minimum.Width), Math.Max(world.Height, minimum.Height));
         }
 
-        _stage.FlyTo(world, animate, margin: 0.08);
+        // Frame the lit parts together, so a callout's label is on screen with its anchor.
+        var frame = holes.Aggregate(world, (all, hole) => all.Union(hole));
+        _stage.FlyTo(frame, animate, margin: 0.08);
         if (element is ImageView image)
         {
             image.Highlight(part);
@@ -312,14 +357,31 @@ public sealed class StageController : IStage
             size = target.Bounds.Size;
         }
 
-        var scale = width / Math.Max(1, size.Width);
-        var pixels = new PixelSize(Math.Max(1, (int)(size.Width * scale)), Math.Max(1, (int)(size.Height * scale)));
-        using var bitmap = new RenderTargetBitmap(pixels, new Vector(96 * scale, 96 * scale));
+        // Rendered at 96 DPI, one pixel per layout unit, and scaled afterwards. At any other
+        // DPI RenderTargetBitmap applies the scale a second time to content nested inside a
+        // transformed panel, and the slide's text came out smaller than its card.
+        var pixels = new PixelSize(Math.Max(1, (int)Math.Ceiling(size.Width)), Math.Max(1, (int)Math.Ceiling(size.Height)));
+        using var bitmap = new RenderTargetBitmap(pixels, new Vector(96, 96));
         bitmap.Render(target);
 
         using var stream = new MemoryStream();
         bitmap.Save(stream);
-        return stream.ToArray();
+        return Resize(stream.ToArray(), width);
+    }
+
+    private static byte[] Resize(byte[] png, int width)
+    {
+        using var source = SkiaSharp.SKBitmap.Decode(png);
+        if (source is null || source.Width <= width)
+        {
+            return png;
+        }
+
+        var height = Math.Max(1, (int)Math.Round(source.Height * (width / (double)source.Width)));
+        using var resized = source.Resize(new SkiaSharp.SKImageInfo(width, height), new SkiaSharp.SKSamplingOptions(SkiaSharp.SKCubicResampler.Mitchell));
+        using var image = SkiaSharp.SKImage.FromBitmap(resized);
+        using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
     }
 
     // ------------------------------------------------------------------------------------
@@ -334,6 +396,7 @@ public sealed class StageController : IStage
             case DeckChangeKind.Opened:
                 _stage.Clear();
                 _views.Clear();
+                _stage.Spotlight.Set([]);
                 _deck = deck;
                 _focus = null;
                 _overview = false;
@@ -345,6 +408,7 @@ public sealed class StageController : IStage
                 PlaceAll();
                 _current = deck.Count > 0 ? 0 : -1;
                 _stage.FlyTo(StageView.SlideRect(Math.Max(0, _current)), animate: false);
+                CurrentChanged?.Invoke(this, CurrentSlide);
                 break;
 
             case DeckChangeKind.SlideAdded:
@@ -359,6 +423,10 @@ public sealed class StageController : IStage
                 if (_views.TryGetValue(e.SlideId!, out var existing))
                 {
                     existing.Update(deck.Find(e.SlideId!)!);
+                    if (deck.IndexOf(e.SlideId!) == _current)
+                    {
+                        CurrentUpdated?.Invoke(this, deck.Find(e.SlideId!)!);
+                    }
                 }
                 else
                 {
@@ -412,6 +480,10 @@ public sealed class StageController : IStage
         }
 
         Publish();
+        if (e.Kind is DeckChangeKind.SlideAdded or DeckChangeKind.SlideRemoved or DeckChangeKind.SlidesMoved)
+        {
+            SlidesChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>After a slide arrives, decide whether the camera follows it.</summary>

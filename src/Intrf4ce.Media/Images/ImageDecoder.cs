@@ -108,8 +108,10 @@ public static class ImageDecoder
     {
         if (Path.GetExtension(path).Equals(".svg", StringComparison.OrdinalIgnoreCase))
         {
-            using var svg = RasteriseSvg(File.ReadAllText(path), 64);
-            return svg is null ? null : (svg.Width, svg.Height);
+            // The document's own size, not a raster of it.
+            using var document = new Svg.Skia.SKSvg();
+            var picture = document.FromSvg(File.ReadAllText(path));
+            return picture is null ? null : ((int)Math.Round(picture.CullRect.Width), (int)Math.Round(picture.CullRect.Height));
         }
 
         try

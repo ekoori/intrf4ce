@@ -62,6 +62,7 @@ public static class PhotoMetadata
         }
         catch (Exception ex) when (ex is ImageProcessingException or IOException or UnauthorizedAccessException)
         {
+            // SVG, and anything else MetadataExtractor does not read: the decoder knows the size.
             var size = ImageDecoder.Probe(path);
             return new PhotoFacts(size?.Width ?? 0, size?.Height ?? 0, null, null, null, null, null, null);
         }
@@ -71,6 +72,12 @@ public static class PhotoMetadata
         var gps = directories.OfType<GpsDirectory>().FirstOrDefault();
 
         var (width, height) = Dimensions(directories, sub);
+        if (width == 0 && ImageDecoder.Probe(path) is { } probed)
+        {
+            // No size in the metadata the reader understood: ask the decoder, which also knows it upright.
+            return new PhotoFacts(probed.Width, probed.Height, null, null, null, null, null, null);
+        }
+
         var orientation = ifd0?.TryGetInt32(ExifDirectoryBase.TagOrientation, out var o) == true ? o : 1;
         if (orientation is >= 5 and <= 8)
         {

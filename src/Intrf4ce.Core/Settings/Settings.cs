@@ -15,6 +15,11 @@ public sealed class AppSettings
 {
     public NarrationSettings Narration { get; set; } = new();
 
+    /// <summary>
+    /// Spelled as one word in YAML: the naming convention would otherwise make it
+    /// <c>eleven_labs</c>, and a file that says <c>elevenlabs:</c> was silently ignored.
+    /// </summary>
+    [YamlMember(Alias = "elevenlabs")]
     public ElevenLabsSettings ElevenLabs { get; set; } = new();
 
     public SystemVoiceSettings SystemVoice { get; set; } = new();
@@ -128,13 +133,20 @@ public sealed class LibrarySettings
     public string Folder { get; set; } = "";
 }
 
-public sealed record SettingsLoad(AppSettings Settings, string? Error);
+/// <param name="Error">Why the file could not be used at all (defaults are in force).</param>
+/// <param name="Warnings">Settings that were not understood and so had no effect, by line.</param>
+public sealed record SettingsLoad(AppSettings Settings, string? Error, IReadOnlyList<string>? Warnings = null);
 
 public static class SettingsFile
 {
     private static readonly IDeserializer Reader = new DeserializerBuilder()
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .IgnoreUnmatchedProperties()
+        .Build();
+
+    /// <summary>The same, but an unknown key is an error: used only to find typos to report.</summary>
+    private static readonly IDeserializer StrictReader = new DeserializerBuilder()
+        .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .Build();
 
     /// <summary>Loads settings, falling back to defaults (and saying why) when the file is broken.</summary>
@@ -147,14 +159,54 @@ public static class SettingsFile
 
         try
         {
-            var settings = Reader.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
-            return new SettingsLoad(settings, null);
+            var text = File.ReadAllText(path);
+            var settings = Reader.Deserialize<AppSettings>(text) ?? new AppSettings();
+            return new SettingsLoad(settings, null, UnknownKeys(text));
         }
         catch (Exception ex) when (ex is YamlException or IOException or UnauthorizedAccessException)
         {
             return new SettingsLoad(new AppSettings(), ex.Message);
         }
     }
+
+    /// <summary>
+    /// Keys the model does not have, one message each, so a typo is reported rather than
+    /// quietly doing nothing. The strict reader stops at the first, so each is removed and
+    /// the text re-read until it parses.
+    /// </summary>
+    public static IReadOnlyList<string> UnknownKeys(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        var warnings = new List<string>();
+        var lines = text.Split('\n').ToList();
+
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            try
+            {
+                StrictReader.Deserialize<AppSettings>(string.Join('\n', lines));
+                break;
+            }
+            catch (YamlException ex) when (ex.Start.Line > 0 && ex.Start.Line <= lines.Count && ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                var line = (int)ex.Start.Line;
+                warnings.Add($"line {line}: '{lines[line - 1].Trim()}' is not a setting intrf4ce knows; it has no effect");
+
+                // Comment it out and look for the next.
+                lines[line - 1] = "#" + lines[line - 1];
+            }
+            catch (YamlException)
+            {
+                break;
+            }
+        }
+
+        return warnings;
+    }
+
+    /// <summary>The documented default file, as written on first run.</summary>
+    public static string DefaultContent => DefaultText;
 
     public static void WriteDefaultIfMissing(string path)
     {

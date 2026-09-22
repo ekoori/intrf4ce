@@ -69,7 +69,13 @@ public sealed class App : Application
             Log.Write("settings error, using defaults: " + load.Error);
         }
 
-        return new MainWindow(paths, load.Settings, load.Error);
+        foreach (var warning in load.Warnings ?? [])
+        {
+            Log.Write("settings: " + warning);
+        }
+
+        var problem = load.Error ?? (load.Warnings is { Count: > 0 } warnings ? string.Join("\n", warnings) : null);
+        return new MainWindow(paths, load.Settings, problem);
     }
 
     /// <summary>A crash that leaves nothing behind is the worst kind of bug report.</summary>

@@ -16,7 +16,9 @@ using Intrf4ce.Core;
 using Intrf4ce.Core.Decks;
 using Intrf4ce.Core.Events;
 using Intrf4ce.Core.Settings;
+using Intrf4ce.Media.Audio;
 using Intrf4ce.Media.Images;
+using Intrf4ce.Media.Tts;
 
 namespace Intrf4ce.App;
 
@@ -32,7 +34,12 @@ public sealed class MainWindow : Window
     private readonly Skin _theme = Skin.Default;
     private readonly DeckService _decks;
     private readonly HttpClient _http;
+    private readonly HttpClient _api;
     private readonly WebRenderService _renderer;
+    private readonly AudioSystem _audio = new();
+    private readonly VoiceService _voices;
+    private readonly Narrator _narrator;
+    private readonly SubtitleBar _subtitles;
     private readonly StageView _stage;
     private readonly StageController _controller;
     private readonly EventHub _events = new();
@@ -61,7 +68,13 @@ public sealed class MainWindow : Window
         var images = new ImageLoader(fetcher, _decks);
         _renderer = new WebRenderService(_theme.Renderer);
 
-        _stage = new StageView { AnimationSpeed = settings.Stage.AnimationSpeed };
+        // Its own client: the image client asks for image/* and gives up after 30 s, and a long
+        // narration can take longer than that to synthesise.
+        _api = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+        _api.DefaultRequestHeaders.UserAgent.ParseAdd("intrf4ce/0.1");
+        _voices = VoiceService.Create(settings, paths, _api, _audio);
+
+        _stage = new StageView(_theme) { AnimationSpeed = settings.Stage.AnimationSpeed };
         _root = new Grid();
         _controller = new StageController(_stage, new ElementContext(_theme, _renderer, images), _decks, () => _stage)
         {
@@ -86,6 +99,8 @@ public sealed class MainWindow : Window
         _header = new HeaderBar(_theme);
         _chat = new ChatBar(_theme);
         _welcome = new WelcomePanel(_theme);
+        _subtitles = new SubtitleBar(_theme);
+        _narrator = new Narrator(_voices, _audio, _controller, _subtitles, _chat.Orb, settings.Narration);
 
         _stage.Background = new RadialGradientBrush
         {
@@ -107,15 +122,27 @@ public sealed class MainWindow : Window
         _root.Children.Add(_stage);
         _root.Children.Add(_welcome);
         _root.Children.Add(_header);
+        _root.Children.Add(_subtitles);
         _root.Children.Add(_chat);
         Content = _root;
 
         // ---- wiring
         _controller.Changed += (_, _) => UpdateHud();
         _controller.AgentReplied += (_, text) => _chat.AddMessage(fromUser: false, text);
-        _controller.Playback = () => "idle";
-        _controller.Voice = () => "none (narration arrives in M1)";
+        _controller.Playback = () => _narrator.State;
+        _controller.Voice = _voices.Describe;
         _controller.Agent = DescribeAgent;
+        _controller.CurrentChanged += (_, slide) => _narrator.SlideShown(slide);
+        _controller.CurrentUpdated += (_, slide) => _narrator.SlideUpdated(slide);
+        _controller.SlidesChanged += (_, _) => _narrator.SlidesChanged();
+        _controller.SayRequested += (_, text) => _narrator.Say(text);
+
+        _narrator.StateChanged += (_, _) => UpdateHud();
+        _voices.Notice += (_, notice) => Dispatcher.UIThread.Post(() =>
+        {
+            Log.Write("voice: " + notice);
+            _chat.AddMessage(fromUser: false, notice, isError: true);
+        });
 
         _chat.Submitted += (_, text) => OnChat(text);
         _chat.Dismissed += (_, _) => _stage.Focus();
@@ -157,7 +184,7 @@ public sealed class MainWindow : Window
 
         if (settingsError is not null)
         {
-            _chat.AddMessage(fromUser: false, $"settings.yaml could not be read, so defaults are in use: {settingsError}", isError: true);
+            _chat.AddMessage(fromUser: false, $"settings.yaml: {settingsError}", isError: true);
         }
 
         _stage.Focus();
@@ -165,6 +192,9 @@ public sealed class MainWindow : Window
 
     private void Shutdown()
     {
+        _narrator.Stop();
+        _audio.Dispose();
+        _api.Dispose();
         _decks.Dispose();
         _ = _agent?.DisposeAsync().AsTask();
         _ = _server.DisposeAsync().AsTask();
@@ -265,6 +295,7 @@ public sealed class MainWindow : Window
 
         var busy = _agent?.Status is AgentStatus.Working or AgentStatus.Starting;
         _chat.Orb.Mood = _agent?.Status == AgentStatus.Failed ? OrbMood.Error
+            : _narrator.IsSpeaking ? OrbMood.Speaking
             : busy ? OrbMood.Working
             : _agent is not null || attached.Count > 0 ? OrbMood.Idle
             : OrbMood.Absent;
@@ -322,6 +353,19 @@ public sealed class MainWindow : Window
 
             case Key.F11 or Key.F:
                 WindowState = WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
+                break;
+
+            case Key.Space:
+                _narrator.Toggle(_controller.CurrentSlide);
+                UpdateHud();
+                break;
+
+            case Key.M:
+                _narrator.Mute();
+                break;
+
+            case Key.S:
+                _narrator.ToggleSubtitles();
                 break;
 
             default:
