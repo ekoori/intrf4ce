@@ -11,9 +11,9 @@ namespace Intrf4ce.App;
 /// callouts, the spoken word) and one cool accent that means "the agent" (its orb, its
 /// messages). A presentation with six accents has none.
 /// </remarks>
-public sealed class Theme
+public sealed class Skin
 {
-    public static Theme Default { get; } = new();
+    public static Skin Default { get; } = new();
 
     public Color Ink { get; init; } = Color.Parse("#0A0E13");
 
@@ -52,7 +52,7 @@ public sealed class Theme
         : OperatingSystem.IsMacOS() ? "Helvetica Neue"
         : "DejaVu Sans";
 
-    public double DiagramFontSize { get; init; } = 16;
+    public double DiagramFontSize { get; init; } = 20;
 
     public RendererTheme Renderer => new(
         DiagramFont,

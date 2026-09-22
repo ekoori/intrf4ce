@@ -1,8 +1,12 @@
+using System.Reflection;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Intrf4ce.App.Render;
 using Intrf4ce.App.SelfTest;
+using Intrf4ce.Core;
+using Intrf4ce.Core.Settings;
 
 namespace Intrf4ce.App;
 
@@ -15,7 +19,11 @@ namespace Intrf4ce.App;
 /// </remarks>
 public sealed class App : Application
 {
-    public override void Initialize() => Styles.Add(new FluentTheme());
+    public override void Initialize()
+    {
+        Styles.Add(new FluentTheme());
+        RequestedThemeVariant = ThemeVariant.Dark;
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -28,7 +36,7 @@ public sealed class App : Application
                     break;
 
                 default:
-                    desktop.MainWindow = new MainWindow();
+                    desktop.MainWindow = CreateMainWindow();
                     break;
             }
         }
@@ -36,9 +44,50 @@ public sealed class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    private static MainWindow CreateMainWindow()
+    {
+        var paths = AppPaths.Default;
+        Log.Initialise(paths.Logs);
+        CatchWhatEscapes();
+
+        var version = typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?";
+        Log.Write($"intrf4ce {version} starting on {Environment.OSVersion}, .NET {Environment.Version}");
+        Log.Write($"config {paths.Config}, cache {paths.Cache}, library {paths.Library}");
+
+        try
+        {
+            SettingsFile.WriteDefaultIfMissing(paths.SettingsFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Error("could not write default settings", ex);
+        }
+
+        var load = SettingsFile.Load(paths.SettingsFile);
+        if (load.Error is not null)
+        {
+            Log.Write("settings error, using defaults: " + load.Error);
+        }
+
+        return new MainWindow(paths, load.Settings, load.Error);
+    }
+
+    /// <summary>A crash that leaves nothing behind is the worst kind of bug report.</summary>
+    private static void CatchWhatEscapes()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Log.Write("FATAL unhandled exception: " + e.ExceptionObject);
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log.Error("a task failed and nobody was watching", e.Exception);
+            e.SetObserved();
+        };
+    }
+
     private static void StartRenderSelfTest(IClassicDesktopStyleApplicationLifetime desktop, string directory)
     {
-        var service = new WebRenderService(Theme.Default.Renderer);
+        var service = new WebRenderService(Skin.Default.Renderer);
         var window = RenderSelfTest.CreateHostWindow(service);
         var test = new RenderSelfTest(directory, service);
 

@@ -431,7 +431,7 @@
   function vegaTheme() {
     var axis = {
       labelColor: theme.muted, titleColor: theme.text, gridColor: theme.line, gridOpacity: 0.5,
-      domainColor: theme.line, tickColor: theme.line, labelFontSize: 13, titleFontSize: 14,
+      domainColor: theme.line, tickColor: theme.line, labelFontSize: 24, titleFontSize: 24, labelPadding: 8, titlePadding: 14,
       titleFontWeight: 600, labelFont: theme.fontFamily, titleFont: theme.fontFamily
     };
     return {
@@ -440,9 +440,9 @@
       padding: 8,
       view: { stroke: null },
       axis: axis,
-      legend: { labelColor: theme.text, titleColor: theme.text, labelFontSize: 13, titleFontSize: 13,
+      legend: { labelColor: theme.text, titleColor: theme.text, labelFontSize: 24, titleFontSize: 24, symbolSize: 240,
         labelFont: theme.fontFamily, titleFont: theme.fontFamily, symbolType: 'circle' },
-      title: { color: theme.text, fontSize: 18, font: theme.fontFamily, anchor: 'start' },
+      title: { color: theme.text, fontSize: 32, font: theme.fontFamily, anchor: 'start' },
       header: { labelColor: theme.text, titleColor: theme.text },
       range: { category: theme.palette },
       mark: { color: theme.palette[0] },
@@ -450,7 +450,7 @@
       bar: { cornerRadiusEnd: 3 },
       line: { strokeWidth: 3 },
       point: { size: 70, filled: true },
-      text: { color: theme.text, font: theme.fontFamily }
+      text: { color: theme.text, font: theme.fontFamily, fontSize: 24 }
     };
   }
 

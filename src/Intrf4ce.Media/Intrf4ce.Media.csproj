@@ -10,6 +10,9 @@
 
   <ItemGroup>
     <PackageReference Include="MetadataExtractor" />
+    <PackageReference Include="SkiaSharp" />
+    <!-- SVG images (Wikimedia's diagrams mostly are) are rasterised for inspection and thumbnails. -->
+    <PackageReference Include="Svg.Skia" />
     <PackageReference Include="SoundFlow" />
     <!-- Windows only. Every call site is behind OperatingSystem.IsWindows(); CA1416 enforces it. -->
     <PackageReference Include="System.Speech" />

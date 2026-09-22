@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
+using Intrf4ce.Agent.Mcp;
+using Intrf4ce.Agent.Shim;
 
 namespace Intrf4ce.App;
 
@@ -22,10 +24,32 @@ public static class Program
     {
         switch (args)
         {
+            // An agent launched us as its MCP server: relay stdio to the window and never
+            // start a UI in this process.
+            case ["--mcp", ..]:
+                var kind = args.Contains("--hosted") ? "hosted" : args.Contains("--channel") ? "channel" : "attached";
+                return StdioShim.RunAsync(kind, Environment.ProcessPath ?? "intrf4ce").GetAwaiter().GetResult();
+
             case ["--selftest", "render", var directory, ..]:
                 UseParentConsole();
                 Mode = LaunchMode.RenderSelfTest;
                 ModeArgument = Path.GetFullPath(directory);
+                break;
+
+            case ["--version", ..]:
+                UseParentConsole();
+                Console.WriteLine(typeof(Program).Assembly.GetName().Version);
+                return 0;
+
+            default:
+                // A second launch brings the running window forward instead of opening another:
+                // there is one stage per user, and one pipe for agents to find it by.
+                if (Environment.GetEnvironmentVariable("INTRF4CE_NO_SINGLE_INSTANCE") is not { Length: > 0 }
+                    && McpServer.TryActivateExisting(PipeName.ForCurrentUser()))
+                {
+                    return 0;
+                }
+
                 break;
         }
 

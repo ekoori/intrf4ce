@@ -1,0 +1,275 @@
+using YamlDotNet.Core;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+
+namespace Intrf4ce.Core.Settings;
+
+/// <summary>
+/// Everything the user decides and the agent never sees: look, voice, pacing, which agent.
+/// </summary>
+/// <remarks>
+/// The design's first principle, "the agent says what, the app decides how", lives here.
+/// Mutable classes rather than records only because YamlDotNet deserialises into setters.
+/// </remarks>
+public sealed class AppSettings
+{
+    public NarrationSettings Narration { get; set; } = new();
+
+    public ElevenLabsSettings ElevenLabs { get; set; } = new();
+
+    public SystemVoiceSettings SystemVoice { get; set; } = new();
+
+    public AgentSettings Agent { get; set; } = new();
+
+    public StageSettings Stage { get; set; } = new();
+
+    public LibrarySettings Library { get; set; } = new();
+}
+
+public sealed class NarrationSettings
+{
+    /// <summary>auto (ElevenLabs when a key is set, else the system voice), elevenlabs, system or none.</summary>
+    public string Engine { get; set; } = "auto";
+
+    /// <summary>What a slide without its own advance does when the narration ends: auto or manual.</summary>
+    public string Advance { get; set; } = "auto";
+
+    /// <summary>Seconds of quiet after the narration before an auto slide moves on.</summary>
+    public double PauseAfter { get; set; } = 1.4;
+
+    /// <summary>Characters per second for subtitles when nothing is spoken.</summary>
+    public double ReadingSpeed { get; set; } = 16;
+
+    public bool Subtitles { get; set; } = true;
+
+    /// <summary>0 to 1.</summary>
+    public double Volume { get; set; } = 1.0;
+
+    /// <summary>Start speaking a slide as soon as it is shown.</summary>
+    public bool Autoplay { get; set; } = true;
+}
+
+public sealed class ElevenLabsSettings
+{
+    public string VoiceId { get; set; } = "auq43ws1oslv0tO4BDa7";
+
+    public string ModelId { get; set; } = "eleven_multilingual_v2";
+
+    /// <summary>
+    /// A file holding the API key, bare or as KEY=value (another project's .env works).
+    /// </summary>
+    /// <remarks>
+    /// A path rather than a copy of the key, so one key file can serve several tools and
+    /// rotating it means editing one file.
+    /// </remarks>
+    public string KeyFile { get; set; } = "";
+
+    /// <summary>Characters intrf4ce may spend per month; checked against the subscription before each clip.</summary>
+    public int MonthlyCap { get; set; } = 30000;
+
+    /// <summary>Stop using ElevenLabs when the account has fewer characters left than this.</summary>
+    public int KeepInReserve { get; set; } = 2000;
+
+    public double Stability { get; set; } = 0.5;
+
+    public double SimilarityBoost { get; set; } = 0.75;
+
+    public double Style { get; set; }
+
+    public double Speed { get; set; } = 1.0;
+}
+
+public sealed class SystemVoiceSettings
+{
+    /// <summary>A voice name as the platform lists it, e.g. "Microsoft Catherine"; empty for the default.</summary>
+    public string Voice { get; set; } = "";
+
+    /// <summary>-10 (slow) to 10 (fast).</summary>
+    public int Rate { get; set; }
+}
+
+public sealed class AgentSettings
+{
+    /// <summary>hosted (the app runs the agent) or attached (you run it and connect it).</summary>
+    public string Mode { get; set; } = "hosted";
+
+    public string Command { get; set; } = "claude";
+
+    /// <summary>Model for the hosted agent; empty for Claude Code's default.</summary>
+    public string Model { get; set; } = "";
+
+    public string PermissionMode { get; set; } = "dontAsk";
+
+    public List<string> AllowedTools { get; set; } =
+        ["mcp__intrf4ce", "WebSearch", "WebFetch", "Read", "Glob", "Grep"];
+
+    /// <summary>Where the hosted agent runs; empty for intrf4ce's own agent folder.</summary>
+    public string WorkingDirectory { get; set; } = "";
+
+    /// <summary>Give the hosted agent only intrf4ce's tools, not every MCP server you have configured.</summary>
+    public bool StrictMcp { get; set; } = true;
+
+    /// <summary>Extra arguments appended to the command line.</summary>
+    public List<string> ExtraArgs { get; set; } = [];
+}
+
+public sealed class StageSettings
+{
+    /// <summary>Multiplies every animation's duration; 0 turns animation off.</summary>
+    public double AnimationSpeed { get; set; } = 1.0;
+
+    /// <summary>Jump to a new slide as soon as the agent adds it, even mid-narration.</summary>
+    public bool FollowAgent { get; set; }
+}
+
+public sealed class LibrarySettings
+{
+    /// <summary>Where decks are kept; empty for Documents/intrf4ce.</summary>
+    public string Folder { get; set; } = "";
+}
+
+public sealed record SettingsLoad(AppSettings Settings, string? Error);
+
+public static class SettingsFile
+{
+    private static readonly IDeserializer Reader = new DeserializerBuilder()
+        .WithNamingConvention(UnderscoredNamingConvention.Instance)
+        .IgnoreUnmatchedProperties()
+        .Build();
+
+    /// <summary>Loads settings, falling back to defaults (and saying why) when the file is broken.</summary>
+    public static SettingsLoad Load(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return new SettingsLoad(new AppSettings(), null);
+        }
+
+        try
+        {
+            var settings = Reader.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+            return new SettingsLoad(settings, null);
+        }
+        catch (Exception ex) when (ex is YamlException or IOException or UnauthorizedAccessException)
+        {
+            return new SettingsLoad(new AppSettings(), ex.Message);
+        }
+    }
+
+    public static void WriteDefaultIfMissing(string path)
+    {
+        if (File.Exists(path))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, DefaultText);
+    }
+
+    /// <summary>Reads a key from secrets.yaml, a key file, or the environment, in that order.</summary>
+    public static string? ElevenLabsKey(AppPaths paths, ElevenLabsSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (Environment.GetEnvironmentVariable("ELEVENLABS_API_KEY") is { Length: > 0 } fromEnvironment)
+        {
+            return fromEnvironment.Trim();
+        }
+
+        if (File.Exists(paths.SecretsFile))
+        {
+            try
+            {
+                var secrets = Reader.Deserialize<Dictionary<string, string>>(File.ReadAllText(paths.SecretsFile));
+                if (secrets is not null && secrets.TryGetValue("elevenlabs_api_key", out var key) && key.Length > 0)
+                {
+                    return key.Trim();
+                }
+            }
+            catch (Exception ex) when (ex is YamlException or IOException or UnauthorizedAccessException)
+            {
+                // A broken secrets file is the same as none; the settings error says which file.
+            }
+        }
+
+        if (settings.KeyFile.Length > 0 && File.Exists(settings.KeyFile))
+        {
+            return KeyFromFile(File.ReadAllText(settings.KeyFile));
+        }
+
+        return null;
+    }
+
+    /// <summary>A key file may hold the bare key or KEY=value lines (the dev/11labs .env format).</summary>
+    public static string? KeyFromFile(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var eq = line.IndexOf('=', StringComparison.Ordinal);
+            var value = (eq < 0 ? line : line[(eq + 1)..]).Trim().Trim('"', '\'');
+            if (value.StartsWith("sk_", StringComparison.Ordinal) || value.Length > 24)
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private const string DefaultText = """
+        # intrf4ce settings. Everything here is yours to decide; the agent never sees this file.
+        # Delete a line to get its default back. Saved changes apply the next time intrf4ce starts.
+
+        narration:
+          engine: auto            # auto | elevenlabs | system | none  (auto = ElevenLabs when a key is set)
+          advance: auto           # auto | manual: what a slide does when its narration ends
+          pause_after: 1.4        # seconds of quiet before an auto slide moves on
+          reading_speed: 16       # characters per second for subtitles when nothing is spoken
+          subtitles: true
+          volume: 1.0
+          autoplay: true          # start speaking a slide as soon as it is shown
+
+        elevenlabs:
+          voice_id: auq43ws1oslv0tO4BDa7
+          model_id: eleven_multilingual_v2
+          key_file: ""            # a file holding the key (bare, or KEY=value); or use secrets.yaml,
+                                  # or the ELEVENLABS_API_KEY environment variable
+          monthly_cap: 30000      # characters intrf4ce may spend per month
+          keep_in_reserve: 2000   # stop when the account has fewer than this left
+          stability: 0.5
+          similarity_boost: 0.75
+          style: 0
+          speed: 1.0
+
+        system_voice:
+          voice: ""               # e.g. Microsoft Catherine; empty for the default voice
+          rate: 0                 # -10 to 10
+
+        agent:
+          mode: hosted            # hosted: intrf4ce runs Claude Code for you. attached: you connect your own.
+          command: claude
+          model: ""               # empty for Claude Code's default
+          permission_mode: dontAsk
+          allowed_tools: [mcp__intrf4ce, WebSearch, WebFetch, Read, Glob, Grep]
+          working_directory: ""   # empty for intrf4ce's own agent folder
+          strict_mcp: true        # only intrf4ce's tools, not every MCP server you have configured
+          extra_args: []
+
+        stage:
+          animation_speed: 1.0    # 0 turns animation off
+          follow_agent: false     # jump to each new slide as the agent adds it
+
+        library:
+          folder: ""              # where decks live; empty for Documents/intrf4ce
+        """;
+}

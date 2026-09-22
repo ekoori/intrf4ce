@@ -1,0 +1,270 @@
+{
+  "definitions": {
+    "element": {
+      "type": "object",
+      "description": "One thing on a slide. Give 'type' plus the fields for that type; everything visual (fonts, colours, motion) is decided by the app.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["title", "markdown", "image", "diagram", "math", "chart", "table", "gallery", "quiz"]
+        },
+        "id": { "type": "string", "description": "Unique on the slide; cues and focus use it (e.g. 'knee'). Letters, digits, '_' and '-'. Generated if omitted." },
+        "area": { "type": "string", "description": "Which region: 'left'/'right' in split, 'main'/'side' in wide. Optional; order decides otherwise." },
+        "rect": { "type": "array", "items": { "type": "number" }, "description": "free layout only: [x, y, w, h] as fractions of the slide." },
+        "caption": { "type": "string", "description": "A short line under the element." },
+        "hidden": { "type": "boolean", "description": "Start invisible; reveal with a [[show id]] cue in the narration." },
+
+        "text": { "type": "string", "description": "title: the title. markdown: CommonMark with tables, code and $inline$ / $$display$$ TeX." },
+        "subtitle": { "type": "string", "description": "title: a line under the title." },
+        "kicker": { "type": "string", "description": "title: a small line above it ('Lesson 1')." },
+
+        "src": { "type": "string", "description": "image: a local file path or an http(s) URL (downloaded and kept with the deck)." },
+        "fit": { "type": "string", "enum": ["contain", "cover"], "description": "image: contain (default) shows all of it." },
+        "alt": { "type": "string", "description": "image: what it shows." },
+        "callouts": {
+          "type": "array",
+          "description": "image: labels with leader lines, laid out in gutters beside the image like an anatomy atlas. Measure positions with inspect_image first.",
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string", "description": "Focus it with [[focus imageId.calloutId]]." },
+              "at": { "type": "array", "items": { "type": "number" }, "description": "[x, y] point the leader touches, as fractions of the image (0,0 top-left)." },
+              "box": { "type": "array", "items": { "type": "number" }, "description": "[x, y, w, h] area to outline instead of a point, as fractions of the image." },
+              "label": { "type": "string", "description": "A few words; under 40 characters." },
+              "detail": { "type": "string", "description": "A sentence shown on hover and when focused." },
+              "side": { "type": "string", "enum": ["auto", "left", "right"] }
+            }
+          }
+        },
+
+        "mermaid": { "type": "string", "description": "diagram: Mermaid source (flowchart, sequence, state, class, er, mindmap, block-beta, timeline…). Node ids become focus targets: [[focus flowId.nodeId]]." },
+        "steps": { "type": "array", "items": { "type": "string" }, "description": "diagram: node ids in the order the narration walks them; lets the user step with the arrow keys." },
+
+        "tex": { "type": "string", "description": "math: TeX source without $ delimiters, e.g. \\frac{a}{b}. Use aligned for several lines." },
+
+        "kind": { "type": "string", "enum": ["bar", "line", "area", "pie", "donut", "scatter"], "description": "chart: the kind, with data, x and y." },
+        "data": { "type": "array", "items": { "type": "object" }, "description": "chart: rows as objects, e.g. [{\"month\":\"Jan\",\"sales\":4}]." },
+        "x": { "type": "string", "description": "chart: field for categories / x axis." },
+        "y": { "type": "string", "description": "chart: field for values / y axis." },
+        "series": { "type": "string", "description": "chart: optional field that splits rows into coloured series." },
+        "vegaLite": { "type": "object", "description": "chart: a complete Vega-Lite spec instead of kind/data/x/y, for anything else. Omit width, height and config." },
+
+        "columns": { "type": "array", "items": { "type": "string" }, "description": "table: column headings." },
+        "rows": { "type": "array", "items": { "type": "array" }, "description": "table: rows of cells (strings, numbers, booleans, null)." },
+        "key": { "type": "string", "description": "table: column whose values name rows for focus; default the first." },
+
+        "items": {
+          "type": "array",
+          "description": "gallery: images to show.",
+          "items": {
+            "type": "object",
+            "required": ["src"],
+            "properties": {
+              "id": { "type": "string" },
+              "src": { "type": "string", "description": "Path or URL." },
+              "caption": { "type": "string" }
+            }
+          }
+        },
+        "folder": { "type": "string", "description": "gallery: show the images in this folder (their EXIF is shown on hover)." },
+        "arrange": { "type": "string", "enum": ["scatter", "grid", "timeline"], "description": "gallery: scatter (an organic pile, default), grid, or timeline by date taken." },
+
+        "question": { "type": "string", "description": "quiz: the question." },
+        "options": { "type": "array", "items": { "type": "string" }, "description": "quiz: two or more choices." },
+        "multiple": { "type": "boolean", "description": "quiz: allow choosing several." },
+        "answer": { "type": "array", "items": { "type": "integer" }, "description": "quiz: zero-based indexes of the correct options; omit for a poll." },
+        "explanation": { "type": "string", "description": "quiz: shown after answering." }
+      }
+    },
+    "slide": {
+      "type": "object",
+      "description": "A slide: elements arranged by a layout, plus narration that is spoken and subtitled.",
+      "properties": {
+        "id": { "type": "string", "description": "Stable id; putting a slide with an existing id replaces it. Generated from the title if omitted." },
+        "title": { "type": "string", "description": "Heading shown at the top of the slide." },
+        "layout": { "type": "string", "enum": ["full", "split", "wide", "stack", "grid", "free"], "description": "Omit to have it chosen: one element fills the slide; a picture with text becomes wide (picture large); more become a grid." },
+        "elements": { "type": "array", "items": { "$ref": "#/definitions/element" } },
+        "narration": { "type": "string", "description": "What is said over the slide, 2-5 sentences. Inline cues fire as the voice reaches them: [[focus el]] or [[focus el.part]] (shorthand [[el.part]]), [[zoom el x y w h]], [[show el]], [[hide el]], [[clear]]." },
+        "advance": { "type": "string", "enum": ["auto", "manual"], "description": "Move on by itself when the narration ends, or wait for the user. Default is the user's setting." },
+        "notes": { "type": "string", "description": "Your own notes; never shown." }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "get_state",
+      "description": "What the user is looking at and what is in the deck: slides with their ids, titles and readiness, the current slide, playback, focus, voice budget, and whether the user has caught up with the newest slide.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "list_decks",
+      "description": "Saved decks, newest first.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "new_deck",
+      "description": "Start a new, empty deck and show it. Do this first when the user asks about a new topic.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["title"],
+        "properties": { "title": { "type": "string" } }
+      }
+    },
+    {
+      "name": "open_deck",
+      "description": "Open a saved deck by id (from list_decks).",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string" } }
+      }
+    },
+    {
+      "name": "put_slide",
+      "description": "Add a slide, or replace the slide with the same id. Returns once the slide has rendered, with any problems (a Mermaid syntax error, an image that failed to load, a cue at a missing part) and the parts you can focus. Build the first slide quickly and keep adding: the user watches earlier slides while you work.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["slide"],
+        "properties": {
+          "slide": { "$ref": "#/definitions/slide" },
+          "after": { "type": "string", "description": "Insert after this slide id, or \"start\". Omit to append (or, when replacing, to keep its place)." }
+        }
+      }
+    },
+    {
+      "name": "update_slide",
+      "description": "Change part of a slide in place, for building it up live: set or replace elements by id, remove elements, or change title, layout, narration or advance. Changes animate in.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "layout": { "type": "string", "enum": ["full", "split", "wide", "stack", "grid", "free"] },
+          "narration": { "type": "string" },
+          "advance": { "type": "string", "enum": ["auto", "manual"] },
+          "notes": { "type": "string" },
+          "elements": { "type": "array", "items": { "$ref": "#/definitions/element" }, "description": "Elements to add, or to replace when the id already exists." },
+          "remove": { "type": "array", "items": { "type": "string" }, "description": "Element ids to remove." }
+        }
+      }
+    },
+    {
+      "name": "remove_slide",
+      "description": "Delete a slide.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string" } }
+      },
+      "annotations": { "destructiveHint": true }
+    },
+    {
+      "name": "move_slide",
+      "description": "Move a slide to follow another, or to the start.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "after"],
+        "properties": {
+          "id": { "type": "string" },
+          "after": { "type": "string", "description": "A slide id, or \"start\"." }
+        }
+      }
+    },
+    {
+      "name": "go_to",
+      "description": "Show a slide now. Use sparingly: the user navigates too, and yanking them away mid-sentence is rude. Good for the first slide, or when they ask.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["slide"],
+        "properties": {
+          "slide": { "type": "string", "description": "A slide id, or a 1-based number." },
+          "play": { "type": "boolean", "description": "Start its narration (default true)." }
+        }
+      }
+    },
+    {
+      "name": "focus",
+      "description": "Zoom to an element or part right now and dim the rest, or clear focus. For choreography timed to speech, put [[focus ...]] cues in the narration instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": { "type": "string", "description": "element or element.part on the current slide; omit to clear." },
+          "region": { "type": "array", "items": { "type": "number" }, "description": "[x, y, w, h] fractions of the element, to zoom somewhere that is not a named part." }
+        }
+      }
+    },
+    {
+      "name": "say",
+      "description": "Speak and subtitle a line now, without adding it to the deck: 'One moment while I find photos of the mouth of the Nile.' Cues are allowed.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["text"],
+        "properties": { "text": { "type": "string" } }
+      }
+    },
+    {
+      "name": "reply",
+      "description": "Answer the user in the chat box. For conversation and questions about what to do next; content belongs on slides.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["text"],
+        "properties": { "text": { "type": "string" } }
+      }
+    },
+    {
+      "name": "wait_for_user",
+      "description": "Wait for the user to do something: a chat message, a quiz answer, an 'ask about this' on part of a slide, or reaching the newest slide. Returns the events, or none after the timeout. Call it in a loop when you have nothing else to build.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "timeout_seconds": { "type": "number", "description": "Default 60, at most 600." }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "snapshot",
+      "description": "See the stage: a PNG of what the user sees, or of one slide. Use it to check a layout you are unsure of; it costs time, so not after every slide.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "slide": { "type": "string", "description": "A slide id; omit for the stage as it is now." },
+          "width": { "type": "integer", "description": "Pixels, default 1280." }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "inspect_image",
+      "description": "Look at an image with a labelled grid of fractions (0 to 1 across and down), so callout positions are measured, not guessed. Also returns its size, date, camera and location when known.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["src"],
+        "properties": {
+          "src": { "type": "string", "description": "Path or http(s) URL." },
+          "grid": { "type": "boolean", "description": "Draw the grid (default true)." }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "scan_media",
+      "description": "List the images in a folder with their metadata (date taken, GPS, camera, size), for building galleries and timelines.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["folder"],
+        "properties": {
+          "folder": { "type": "string" },
+          "recursive": { "type": "boolean" },
+          "limit": { "type": "integer", "description": "Default 200." }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    }
+  ]
+}
