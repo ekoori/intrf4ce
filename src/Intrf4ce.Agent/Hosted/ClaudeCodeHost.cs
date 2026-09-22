@@ -152,6 +152,21 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Continues <paramref name="session"/> instead of the one running: the deck the user just
+    /// opened was built in that conversation.
+    /// </summary>
+    public async Task SwitchToAsync(string? session)
+    {
+        if (session is null || session == SessionId)
+        {
+            return;
+        }
+
+        await StopAsync().ConfigureAwait(false);
+        Start(session);
+    }
+
     /// <summary>Sends a user message, starting the agent first if it is not running.</summary>
     public void Send(string text)
     {

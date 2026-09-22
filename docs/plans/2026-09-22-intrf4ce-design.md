@@ -94,9 +94,15 @@ under Xvfb where feasible; macOS builds but cannot be run here, and the README m
 
 ## Document model
 
-A **deck** is a folder: `deck.json`, `assets/` (every image, including downloaded URLs, so a
-saved deck is self-contained) and `audio/` (narration clips, content-addressed). Decks autosave
-on every change, because the agent builds incrementally and a crash must not lose its work.
+A **deck** is a folder: `deck.json` and `assets/`. Decks autosave on every change, because the
+agent builds incrementally and a crash must not lose its work.
+
+As built, `assets/` holds what was downloaded from a URL; a file already on the machine is
+referenced where it lies rather than copied, so a gallery of a holiday folder does not duplicate
+gigabytes of photographs. The element keeps the source exactly as the agent wrote it, and the
+deck records where each download landed, so reopening finds the file instead of fetching it
+again. Narration clips are cached per machine under `cache/voice`, shared across decks, since
+the same sentence should never be paid for twice.
 
 ```json
 {
@@ -295,6 +301,11 @@ WebView loads only vendored local scripts and blocks network requests; Mermaid r
 | **M1 Narrated anatomy** | callouts, spotlight focus; narration with **ElevenLabs** (timestamps, content-addressed cache, budget guard) and SAPI fallback; subtitles, cues, auto/manual advance; chat bar; hosted Claude Code; `wait_for_user`, `reply`; `inspect_image`; orb and status |
 | **M2 Rich renderers** | render service; `diagram` with focusable nodes and steps; `math` and Markdown math; `chart` |
 | **M3 Photos, data, interaction** | `gallery`, `scan_media`, `table`, `quiz`, ask-about-this |
+
+M0 to M3 are built. What M3 added beyond the plan: clicking any part of a slide focuses it and
+clicking it again goes back, a transcript panel (`T`), and part names that come from content —
+table rows and a folder's photos — which are slugs ("Knee joint" is `knee-joint`, `IMG_2031.jpg`
+is `img-2031`) so the validator can check a cue before anything is drawn.
 | **M4 Cross-platform and polish** | `say`, espeak and Piper engines; Linux container smoke test; channels; overview; library; settings hot reload; four-RID packaging; README |
 
 Not in v1 (YAGNI until asked): video, embedded live web pages, a native "exploded layers"

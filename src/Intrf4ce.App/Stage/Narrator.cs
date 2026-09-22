@@ -114,6 +114,16 @@ public sealed class Narrator
         }
     }
 
+    /// <summary>The settings file changed: take the volume and subtitles from it now.</summary>
+    public void SettingsChanged()
+    {
+        _audio.Volume = _muted ? 0 : (float)_settings.Volume;
+        if (!_settings.Subtitles)
+        {
+            _subtitles.Hide();
+        }
+    }
+
     /// <summary>Space: pause, resume, or play the slide again once it has finished.</summary>
     public void Toggle(Slide? current)
     {

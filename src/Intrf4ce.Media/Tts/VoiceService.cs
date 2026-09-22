@@ -66,6 +66,11 @@ public sealed class VoiceService
         {
             engines.Add(new SystemVoiceEngine(settings.SystemVoice, paths.VoiceCache));
         }
+        else if (choice is not "none" && new CommandVoiceEngine(settings.SystemVoice, paths.VoiceCache) is { IsAvailable: true } command)
+        {
+            // macOS and Linux speak through whatever they have: say, piper or espeak.
+            engines.Add(command);
+        }
 
         engines.Add(new SilentEngine(settings.Narration.ReadingSpeed));
         return new VoiceService(engines, eleven);

@@ -49,12 +49,18 @@ public sealed class MainWindow : Window
     private readonly HeaderBar _header;
     private readonly ChatBar _chat;
     private readonly TranscriptPanel _transcript;
+    private readonly LibraryPanel _library;
+    private readonly AppSettings _settings;
+    private readonly SettingsWatcher? _watcher;
     private readonly WelcomePanel _welcome;
     private AskSubject? _asking;
     private int _toolCalls;
 
     public MainWindow(AppPaths paths, AppSettings settings, string? settingsError)
     {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(settings);
+        _settings = settings;
         Title = "intrf4ce";
         Width = 1480;
         Height = 920;
@@ -103,6 +109,7 @@ public sealed class MainWindow : Window
         _header = new HeaderBar(_theme);
         _chat = new ChatBar(_theme);
         _transcript = new TranscriptPanel(_theme);
+        _library = new LibraryPanel(_theme);
         _welcome = new WelcomePanel(_theme);
         _subtitles = new SubtitleBar(_theme);
         _narrator = new Narrator(_voices, _audio, _controller, _subtitles, _chat.Orb, settings.Narration);
@@ -130,6 +137,7 @@ public sealed class MainWindow : Window
         _root.Children.Add(_subtitles);
         _root.Children.Add(_chat);
         _root.Children.Add(_transcript);
+        _root.Children.Add(_library);
         Content = _root;
 
         // ---- wiring
@@ -153,6 +161,7 @@ public sealed class MainWindow : Window
         _chat.Submitted += (_, text) => OnChat(text);
         _chat.Dismissed += (_, _) => _stage.Focus();
         _chat.ContextCleared += (_, _) => _asking = null;
+        _library.Picked += (_, id) => OpenDeck(id);
         _chat.MessageAdded += (_, message) => _transcript.Add(message);
 
         _server.ActivateRequested += (_, _) => Dispatcher.UIThread.Post(BringForward);
@@ -163,6 +172,16 @@ public sealed class MainWindow : Window
         {
             _agent.Activity += (_, activity) => Dispatcher.UIThread.Post(() => OnAgentActivity(activity));
             _agent.StatusChanged += (_, _) => Dispatcher.UIThread.Post(UpdateHud);
+        }
+
+        try
+        {
+            _watcher = new SettingsWatcher(paths.SettingsFile);
+            _watcher.Reloaded += (_, load) => Dispatcher.UIThread.Post(() => OnSettingsReloaded(load));
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException)
+        {
+            Log.Error("could not watch settings.yaml", ex);
         }
 
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
@@ -205,8 +224,53 @@ public sealed class MainWindow : Window
         _stage.Focus();
     }
 
+    /// <summary>Opens a deck the user picked, and moves the agent to the conversation that built it.</summary>
+    private void OpenDeck(string id)
+    {
+        try
+        {
+            var deck = _decks.Open(id);
+            _stage.Focus();
+            if (_agent is not null && deck.AgentSession is { Length: > 0 } session)
+            {
+                _ = _agent.SwitchToAsync(session);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Log.Error($"opening deck '{id}'", ex);
+            _chat.AddMessage(fromUser: false, $"Could not open that deck: {ex.Message}", isError: true);
+        }
+    }
+
+    /// <summary>settings.yaml was saved: what can change now does, and the rest is reported.</summary>
+    private void OnSettingsReloaded(SettingsLoad load)
+    {
+        if (load.Error is { } error)
+        {
+            _chat.AddMessage(fromUser: false, $"settings.yaml: {error}", isError: true);
+            return;
+        }
+
+        var later = SettingsFile.ApplyLive(_settings, load.Settings);
+        _stage.AnimationSpeed = _settings.Stage.AnimationSpeed;
+        _controller.FollowAgent = _settings.Stage.FollowAgent;
+        _narrator.SettingsChanged();
+
+        foreach (var warning in load.Warnings ?? [])
+        {
+            _chat.AddMessage(fromUser: false, "settings.yaml: " + warning, isError: true);
+        }
+
+        _chat.SetStatus(later.Count == 0
+            ? "Settings reloaded"
+            : $"Settings reloaded; {string.Join(", ", later)} needs a restart");
+        Log.Write($"settings reloaded ({later.Count} needing a restart)");
+    }
+
     private void Shutdown()
     {
+        _watcher?.Dispose();
         _narrator.Stop();
         _audio.Dispose();
         _api.Dispose();
@@ -321,6 +385,13 @@ public sealed class MainWindow : Window
 
             case AgentActivityKind.TurnDone:
                 _chat.SetStatus(null);
+
+                // Remember whose conversation built this deck, so reopening it resumes there.
+                if (_agent?.SessionId is { Length: > 0 } session && _decks.Current?.AgentSession != session)
+                {
+                    _decks.SetAgentSession(session);
+                }
+
                 break;
 
             case AgentActivityKind.Error:
@@ -412,6 +483,13 @@ public sealed class MainWindow : Window
             return;
         }
 
+        // The library takes the arrow keys and Enter while it is open.
+        if (_library.Handle(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Right or Key.PageDown:
@@ -466,6 +544,18 @@ public sealed class MainWindow : Window
 
             case Key.T:
                 _transcript.Toggle();
+                break;
+
+            case Key.L:
+                if (_library.IsVisible)
+                {
+                    _library.Hide();
+                }
+                else
+                {
+                    _library.Show(_decks.Store.List(), _decks.Current?.Id);
+                }
+
                 break;
 
             case Key.Escape when _transcript.IsVisible:

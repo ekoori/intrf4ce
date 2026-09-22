@@ -93,4 +93,31 @@ public class SettingsTests
 
         return keys;
     }
+
+    [Fact]
+    public void ReloadingSettingsChangesWhatItCanAndNamesWhatItCannot()
+    {
+        var live = new AppSettings();
+        live.Narration.Volume = 1.0;
+        live.Agent.Model = "sonnet";
+
+        var loaded = new AppSettings();
+        loaded.Narration.Volume = 0.3;
+        loaded.Narration.Engine = "system";
+        loaded.ElevenLabs.VoiceId = "another-voice";
+        loaded.Stage.AnimationSpeed = 0.5;
+        loaded.Agent.Model = "opus";
+        loaded.Library.Folder = @"D:\decks";
+
+        var later = SettingsFile.ApplyLive(live, loaded);
+
+        Assert.Equal(0.3, live.Narration.Volume);
+        Assert.Equal("another-voice", live.ElevenLabs.VoiceId);
+        Assert.Equal(0.5, live.Stage.AnimationSpeed);
+        Assert.Equal(["narration.engine", "agent", "library.folder"], later);
+
+        // Engine and agent are reported, not applied: the app chose its engines at startup.
+        Assert.Equal("auto", live.Narration.Engine);
+        Assert.Equal("sonnet", live.Agent.Model);
+    }
 }

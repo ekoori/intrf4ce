@@ -205,6 +205,68 @@ public static class SettingsFile
         return warnings;
     }
 
+    /// <summary>
+    /// Copies everything that can change while the app is running into the objects it already
+    /// holds, so the voice, the pacing and the stage follow the file without a restart.
+    /// </summary>
+    /// <returns>The settings that were left alone because they only take effect on startup.</returns>
+    public static IReadOnlyList<string> ApplyLive(AppSettings live, AppSettings loaded)
+    {
+        ArgumentNullException.ThrowIfNull(live);
+        ArgumentNullException.ThrowIfNull(loaded);
+
+        var later = new List<string>();
+
+        // The engines were chosen and the key read when the app started.
+        if (!string.Equals(live.Narration.Engine, loaded.Narration.Engine, StringComparison.OrdinalIgnoreCase))
+        {
+            later.Add("narration.engine");
+        }
+
+        live.Narration.Advance = loaded.Narration.Advance;
+        live.Narration.PauseAfter = loaded.Narration.PauseAfter;
+        live.Narration.ReadingSpeed = loaded.Narration.ReadingSpeed;
+        live.Narration.Subtitles = loaded.Narration.Subtitles;
+        live.Narration.Volume = loaded.Narration.Volume;
+        live.Narration.Autoplay = loaded.Narration.Autoplay;
+
+        if (live.ElevenLabs.KeyFile != loaded.ElevenLabs.KeyFile)
+        {
+            later.Add("elevenlabs.key_file");
+        }
+
+        live.ElevenLabs.VoiceId = loaded.ElevenLabs.VoiceId;
+        live.ElevenLabs.ModelId = loaded.ElevenLabs.ModelId;
+        live.ElevenLabs.MonthlyCap = loaded.ElevenLabs.MonthlyCap;
+        live.ElevenLabs.KeepInReserve = loaded.ElevenLabs.KeepInReserve;
+        live.ElevenLabs.Stability = loaded.ElevenLabs.Stability;
+        live.ElevenLabs.SimilarityBoost = loaded.ElevenLabs.SimilarityBoost;
+        live.ElevenLabs.Style = loaded.ElevenLabs.Style;
+        live.ElevenLabs.Speed = loaded.ElevenLabs.Speed;
+
+        live.SystemVoice.Voice = loaded.SystemVoice.Voice;
+        live.SystemVoice.Rate = loaded.SystemVoice.Rate;
+
+        live.Stage.AnimationSpeed = loaded.Stage.AnimationSpeed;
+        live.Stage.FollowAgent = loaded.Stage.FollowAgent;
+
+        // The agent is a process started at launch; the library is the folder decks came from.
+        if (live.Agent.Mode != loaded.Agent.Mode || live.Agent.Command != loaded.Agent.Command
+            || live.Agent.Model != loaded.Agent.Model || live.Agent.PermissionMode != loaded.Agent.PermissionMode
+            || live.Agent.WorkingDirectory != loaded.Agent.WorkingDirectory || live.Agent.StrictMcp != loaded.Agent.StrictMcp
+            || !live.Agent.AllowedTools.SequenceEqual(loaded.Agent.AllowedTools) || !live.Agent.ExtraArgs.SequenceEqual(loaded.Agent.ExtraArgs))
+        {
+            later.Add("agent");
+        }
+
+        if (live.Library.Folder != loaded.Library.Folder)
+        {
+            later.Add("library.folder");
+        }
+
+        return later;
+    }
+
     /// <summary>The documented default file, as written on first run.</summary>
     public static string DefaultContent => DefaultText;
 
@@ -280,7 +342,8 @@ public static class SettingsFile
 
     private const string DefaultText = """
         # intrf4ce settings. Everything here is yours to decide; the agent never sees this file.
-        # Delete a line to get its default back. Saved changes apply the next time intrf4ce starts.
+        # Delete a line to get its default back. Saving applies most changes at once; the few that
+        # need a restart (the agent, the narration engine) say so when you save.
 
         narration:
           engine: auto            # auto | elevenlabs | system | none  (auto = ElevenLabs when a key is set)
