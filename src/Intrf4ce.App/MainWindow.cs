@@ -47,8 +47,7 @@ public sealed class MainWindow : Window
     private readonly ClaudeCodeHost? _agent;
     private readonly Grid _root;
     private readonly HeaderBar _header;
-    private readonly ChatBar _chat;
-    private readonly TranscriptPanel _transcript;
+    private readonly ConversationPanel _chat;
     private readonly LibraryPanel _library;
     private readonly AppSettings _settings;
     private readonly SettingsWatcher? _watcher;
@@ -107,8 +106,7 @@ public sealed class MainWindow : Window
 
         // ---- view
         _header = new HeaderBar(_theme);
-        _chat = new ChatBar(_theme);
-        _transcript = new TranscriptPanel(_theme);
+        _chat = new ConversationPanel(_theme);
         _library = new LibraryPanel(_theme);
         _welcome = new WelcomePanel(_theme);
         _subtitles = new SubtitleBar(_theme);
@@ -130,15 +128,25 @@ public sealed class MainWindow : Window
         var hidden = new Panel { Width = 0, Height = 0, ClipToBounds = true, IsHitTestVisible = false };
         hidden.Children.Add(_renderer.View);
 
-        _root.Children.Add(hidden);
-        _root.Children.Add(_stage);
-        _root.Children.Add(_welcome);
-        _root.Children.Add(_header);
-        _root.Children.Add(_subtitles);
+        // The stage keeps a column to itself; the conversation sits beside it rather than over
+        // it, so nothing the agent says covers the thing it is saying it about.
+        var presentation = new Panel();
+        presentation.Children.Add(hidden);
+        presentation.Children.Add(_stage);
+        presentation.Children.Add(_welcome);
+        presentation.Children.Add(_header);
+        presentation.Children.Add(_subtitles);
+        presentation.Children.Add(_library);
+
+        _root.ColumnDefinitions = new ColumnDefinitions("*,Auto");
+        Grid.SetColumn(presentation, 0);
+        Grid.SetColumn(_chat, 1);
+        _root.Children.Add(presentation);
         _root.Children.Add(_chat);
-        _root.Children.Add(_transcript);
-        _root.Children.Add(_library);
         Content = _root;
+
+        // A share of the window, within reason: wide enough to read, never half the stage.
+        SizeChanged += (_, e) => _chat.SetPreferredWidth(Math.Clamp(e.NewSize.Width * 0.27, 300, 460));
 
         // ---- wiring
         _controller.Changed += (_, _) => UpdateHud();
@@ -162,7 +170,6 @@ public sealed class MainWindow : Window
         _chat.Dismissed += (_, _) => _stage.Focus();
         _chat.ContextCleared += (_, _) => _asking = null;
         _library.Picked += (_, id) => OpenDeck(id);
-        _chat.MessageAdded += (_, message) => _transcript.Add(message);
 
         _server.ActivateRequested += (_, _) => Dispatcher.UIThread.Post(BringForward);
         _server.SessionsChanged += (_, _) => Dispatcher.UIThread.Post(UpdateHud);
@@ -472,7 +479,7 @@ public sealed class MainWindow : Window
 
         if (_agent is null)
         {
-            _chat.SetPlaceholder(attached.Count > 0 ? "Message your agent…" : "Connect an agent to chat (see above)");
+            _chat.SetPlaceholder(attached.Count > 0 ? "Message your agent…" : "Connect an agent to chat");
         }
     }
 
@@ -543,7 +550,8 @@ public sealed class MainWindow : Window
                 break;
 
             case Key.T:
-                _transcript.Toggle();
+                _chat.Collapse(!_chat.Collapsed);
+                _stage.Focus();
                 break;
 
             case Key.L:
@@ -556,10 +564,6 @@ public sealed class MainWindow : Window
                     _library.Show(_decks.Store.List(), _decks.Current?.Id);
                 }
 
-                break;
-
-            case Key.Escape when _transcript.IsVisible:
-                _transcript.IsVisible = false;
                 break;
 
             case Key.Escape when _controller.IsOverview:
@@ -576,6 +580,10 @@ public sealed class MainWindow : Window
 
             case Key.Enter or Key.OemQuestion or Key.Divide:
                 _chat.FocusInput();
+                break;
+
+            case Key.Escape when _chat.Collapsed:
+                _chat.Collapse(false);
                 break;
 
             case Key.F11 or Key.F:

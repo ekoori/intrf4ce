@@ -52,7 +52,7 @@ public sealed class StageView : Panel
     public double AnimationSpeed { get; set; } = 1;
 
     /// <summary>Screen space the HUD covers; slides are fitted into what is left.</summary>
-    public Thickness SafeArea { get; set; } = new(24, 64, 24, 176);
+    public Thickness SafeArea { get; set; } = new(24, 64, 24, 124);
 
     public CameraView View => _view;
 

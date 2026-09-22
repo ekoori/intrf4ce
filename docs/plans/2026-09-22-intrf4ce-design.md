@@ -34,7 +34,7 @@ Decisions made on 2026-09-22:
 ```
 intrf4ce (GUI, single instance) ─────────────────────────────────────────────────────────┐
 │  Stage (Avalonia, world space)   slides on a 2D canvas · camera flights · element views │
-│  HUD (screen space)              subtitles · agent orb · chat bar · toasts             │
+│  HUD (screen space)              subtitles · conversation panel (orb, chat) · toasts   │
 │  Render service                  hidden NativeWebView ─ mermaid · MathJax · Vega-Lite  │
 │                                    → self-contained SVG + part boxes → Svg.Skia        │
 │  Narration                       TTS engine → audio cache → SoundFlow → cue clock      │
@@ -189,7 +189,7 @@ overspend. Without a key the system voice is used.
   click flies the camera to it. EXIF orientation is honoured, since phone photos are usually
   rotated.
 - **Visual language**: dark ink stage, one warm accent for focus, one cool accent for the agent,
-  1 px leaders with anchor dots, staggered 300 ms entrances. The agent orb (bottom left) breathes
+  1 px leaders with anchor dots, staggered 300 ms entrances. The agent orb (in the panel) breathes
   when idle, orbits while the agent works, and moves with the voice while speaking. The status
   line under the orb says what the agent is doing ("Searching the web", "Building slide 4").
 

@@ -15,7 +15,7 @@ in `settings.yaml`, and no tool lets an agent touch them.
 Download or build a single executable (see [Building](#building)), then run it.
 
 By default intrf4ce runs **Claude Code for you**: start the app, type what you want explained in
-the box at the bottom, and watch. It needs `claude` on your PATH; anything else is settings.
+the box on the right, and watch. It needs `claude` on your PATH; anything else is settings.
 
 To drive it from an agent you run yourself, set `agent.mode: attached` in `settings.yaml` and
 register intrf4ce as an MCP server:
@@ -54,7 +54,7 @@ element, `[[clear]]` returns to the whole slide.
 | `Home` `End` | first, last slide |
 | `O` | overview of the whole deck |
 | `L` | library: every deck on disk |
-| `T` | the conversation so far |
+| `T` | show or hide the conversation panel |
 | `Space` | play or pause the narration |
 | `M` `S` | mute, subtitles |
 | `Enter` or `/` | write to the agent |
@@ -72,12 +72,14 @@ offers **Ask about this**, which sends your question to the agent along with wha
 
 | | |
 |---|---|
-| Windows | `%USERPROFILE%\Documents\intrf4ce\config\settings.yaml` |
-| macOS, Linux | `~/Documents/intrf4ce/config/settings.yaml` (or `$XDG_CONFIG_HOME/intrf4ce`) |
+| Windows | `%APPDATA%\intrf4ce\settings.yaml` |
+| macOS | `~/Library/Application Support/intrf4ce/settings.yaml` |
+| Linux | `$XDG_CONFIG_HOME/intrf4ce/settings.yaml` (or `~/.config/intrf4ce`) |
 
-Decks are folders under `Documents/intrf4ce/library`, each holding `deck.json` and its assets;
-voice clips, renders and logs are cache and can be deleted at any time. `INTRF4CE_HOME=<folder>`
-puts all three under one folder, which is how the tests run a second instance beside a real one.
+Decks are folders under `Documents/intrf4ce`, each holding `deck.json` and its assets; voice
+clips, renders and logs are cache (`%LOCALAPPDATA%\intrf4ce` on Windows) and can be deleted at
+any time. `INTRF4CE_HOME=<folder>` puts all three under one folder, which is how the tests run a
+second instance beside a real one.
 
 Saving the file applies what can change immediately — voice, pacing, volume, subtitles, animation
 speed. Changing the agent or the engine tells you it needs a restart.
@@ -86,7 +88,15 @@ speed. Changing the agent or the engine tells you it needs a restart.
 sentence is never paid for twice; before each synthesis the account is checked against
 `monthly_cap` and `keep_in_reserve`, and intrf4ce falls back to the system voice rather than
 overspend. Give the key as a path to a file (`elevenlabs.key_file`), in `secrets.yaml`, or in
-`ELEVENLABS_API_KEY` — never in `settings.yaml`, which is meant to be shareable.
+`ELEVENLABS_API_KEY` — never in `settings.yaml`, which is meant to be shareable:
+
+```yaml
+elevenlabs:
+  key_file: 'C:\path\to\.env'   # the file may hold the bare key or KEY=value
+```
+
+The voice in use is in `get_state`, and in the status line when a voice declines: "ElevenLabs
+(0 of 30,000 characters used this month)" means the key was found.
 
 ## Building
 

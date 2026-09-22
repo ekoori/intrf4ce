@@ -76,6 +76,13 @@ a local voice did. Cues fire 250 ms early so the camera is already moving as the
 Captions are split into sentences and the spoken word is highlighted. A slide that the agent has
 not built yet is waited for rather than skipped.
 
+## The window
+
+Two columns: the stage, and the conversation beside it. The chat used to float over the bottom
+of the stage, which meant the agent's answer covered the slide it was about; now it has a column
+of its own, holds every message rather than fading them, and collapses with `T` to a strip
+holding the agent orb — still visible, still a way back in — while the stage takes the window.
+
 ## Events back to the agent
 
 Chat messages, quiz answers and "ask about this" clicks go to exactly one place: the hosted
