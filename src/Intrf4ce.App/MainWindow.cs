@@ -55,6 +55,7 @@ public sealed class MainWindow : Window
     private readonly WelcomePanel _welcome;
     private AskSubject? _asking;
     private string? _resumed;
+    private string? _said;
     private int _toolCalls;
 
     public MainWindow(AppPaths paths, AppSettings settings, string? settingsError)
@@ -217,6 +218,9 @@ public sealed class MainWindow : Window
             _agent.Activity += (_, activity) => Dispatcher.UIThread.Post(() => OnAgentActivity(activity));
             _agent.StatusChanged += (_, _) => Dispatcher.UIThread.Post(UpdateHud);
         }
+
+        App.UiThreadError += ex => Dispatcher.UIThread.Post(
+            () => _chat.AddMessage(fromUser: false, "Something went wrong inside intrf4ce: " + ex.Message, isError: true));
 
         try
         {
@@ -448,6 +452,7 @@ public sealed class MainWindow : Window
         switch (activity.Kind)
         {
             case AgentActivityKind.Said:
+                _said = activity.Text;
                 _chat.AddMessage(fromUser: false, activity.Text);
                 break;
 
@@ -461,13 +466,20 @@ public sealed class MainWindow : Window
                 // Remember whose conversation built this deck, so reopening it resumes there.
                 if (_agent?.SessionId is { Length: > 0 } session && _decks.Current?.AgentSession != session)
                 {
-                    _decks.SetAgentSession(session);
+                    _decks.TrySetAgentSession(session);
                 }
 
                 break;
 
-            case AgentActivityKind.Error:
+            // An agent that fails often says why and then reports the same thing as an error;
+            // twice in red helps nobody.
+            case AgentActivityKind.Error when activity.Text != _said:
+                _said = activity.Text;
                 _chat.AddMessage(fromUser: false, activity.Text, isError: true);
+                _chat.SetStatus(null);
+                break;
+
+            case AgentActivityKind.Error:
                 _chat.SetStatus(null);
                 break;
         }

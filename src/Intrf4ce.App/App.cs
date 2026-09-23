@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
+using Avalonia.Threading;
 using Intrf4ce.App.Render;
 using Intrf4ce.App.SelfTest;
 using Intrf4ce.Core;
@@ -44,6 +45,9 @@ public sealed class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    /// <summary>Raised for anything that escaped onto the UI thread, for the window to show.</summary>
+    public static event Action<Exception>? UiThreadError;
+
     private static MainWindow CreateMainWindow()
     {
         var paths = AppPaths.Default;
@@ -79,8 +83,23 @@ public sealed class App : Application
     }
 
     /// <summary>A crash that leaves nothing behind is the worst kind of bug report.</summary>
+    /// <summary>
+    /// Keeps the window up when something throws where nobody was catching.
+    /// </summary>
+    /// <remarks>
+    /// The app is driven by an agent while someone watches a presentation: a mistake in one
+    /// handler has to end as a message, not as a window disappearing mid-sentence. Everything
+    /// is logged with its stack, and what reached the UI thread is shown to the user.
+    /// </remarks>
     private static void CatchWhatEscapes()
     {
+        Dispatcher.UIThread.UnhandledException += (_, e) =>
+        {
+            Log.Error("unhandled on the UI thread", e.Exception);
+            UiThreadError?.Invoke(e.Exception);
+            e.Handled = true;
+        };
+
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             Log.Write("FATAL unhandled exception: " + e.ExceptionObject);
 

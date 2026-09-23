@@ -196,7 +196,25 @@ public sealed class DeckService : IDisposable
 
     public void Rename(string title) => UpdateDeck(d => d with { Title = title });
 
-    public void SetAgentSession(string? sessionId) => UpdateDeck(d => d with { AgentSession = sessionId });
+    /// <summary>
+    /// Remembers the agent conversation that built the open deck, if one is open.
+    /// </summary>
+    /// <remarks>
+    /// Called whenever the agent finishes a turn, which it may well do before any deck exists —
+    /// it can answer a question, or fail, without building anything — so having nothing to
+    /// write it on is an ordinary outcome and not an error.
+    /// </remarks>
+    /// <returns>False when no deck is open.</returns>
+    public bool TrySetAgentSession(string? sessionId)
+    {
+        if (Current is null)
+        {
+            return false;
+        }
+
+        UpdateDeck(d => d with { AgentSession = sessionId });
+        return true;
+    }
 
     /// <summary>Records where an image source was saved, relative to the deck folder.</summary>
     public void AddAsset(string source, string relativePath) =>

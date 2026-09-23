@@ -166,4 +166,18 @@ public sealed class DeckServiceTests : IDisposable
     {
         Assert.Equal(expected, SettingsFile.KeyFromFile(text));
     }
+
+    [Fact]
+    public void RememberingTheAgentSessionBeforeThereIsADeckDoesNothing()
+    {
+        using var service = new DeckService(new DeckStore(_root));
+
+        // The agent can finish a turn having only talked, or having failed, before any deck
+        // exists; that must not throw, because the window has nowhere to catch it.
+        Assert.False(service.TrySetAgentSession("session-1"));
+
+        service.New("A deck");
+        Assert.True(service.TrySetAgentSession("session-1"));
+        Assert.Equal("session-1", service.Current!.AgentSession);
+    }
 }
