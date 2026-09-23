@@ -52,7 +52,28 @@ public class SessionFolderTests : IDisposable
     }
 
     [Fact]
-    public async Task MediaOnASlideIsCopiedIntoTheSession()
+    public async Task APictureOnThisMachineIsPointedAtWhereItLives()
+    {
+        var sessions = Folder("sessions");
+        var elsewhere = Folder("pictures");
+        var photo = Path.Combine(elsewhere, "holiday.jpg");
+        await File.WriteAllBytesAsync(photo, [1, 2, 3, 4]);
+
+        var store = new DeckStore(sessions);
+        var deck = store.Create("Holiday", DateTimeOffset.Now);
+        store.Save(deck);
+
+        using var http = new HttpClient();
+        var (path, relative) = await new AssetFetcher(http).ResolveAsync(photo, null, store.FolderOf(deck.Id), CancellationToken.None);
+
+        // A folder of photographs belongs to the user, in one place.
+        Assert.Null(relative);
+        Assert.Equal(photo, path);
+        Assert.False(Directory.Exists(Path.Combine(store.FolderOf(deck.Id), "assets")));
+    }
+
+    [Fact]
+    public async Task MediaOnASlideIsCopiedIntoTheSessionWhenAskedFor()
     {
         var sessions = Folder("sessions");
         var elsewhere = Folder("pictures");
@@ -65,7 +86,7 @@ public class SessionFolderTests : IDisposable
         var deckFolder = store.FolderOf(deck.Id);
 
         using var http = new HttpClient();
-        var fetcher = new AssetFetcher(http);
+        var fetcher = new AssetFetcher(http) { CopyMedia = true };
         var (path, relative) = await fetcher.ResolveAsync(photo, null, deckFolder, CancellationToken.None);
 
         Assert.NotNull(relative);
@@ -98,5 +119,30 @@ public class SessionFolderTests : IDisposable
         Assert.Null(relative);
         Assert.Equal(inside, path);
         Assert.Single(Directory.GetFiles(Path.Combine(deckFolder, "assets")));
+    }
+
+    [Fact]
+    public async Task ACopyIsUsedOnlyWhenTheOriginalHasGone()
+    {
+        var sessions = Folder("sessions");
+        var elsewhere = Folder("pictures");
+        var photo = Path.Combine(elsewhere, "holiday.jpg");
+        await File.WriteAllBytesAsync(photo, [1, 2, 3, 4]);
+
+        var store = new DeckStore(sessions);
+        var deck = store.Create("Holiday", DateTimeOffset.Now);
+        store.Save(deck);
+        var deckFolder = store.FolderOf(deck.Id);
+
+        using var http = new HttpClient();
+        var copied = await new AssetFetcher(http) { CopyMedia = true }.ResolveAsync(photo, null, deckFolder, CancellationToken.None);
+
+        // With copying off again, the picture where the user keeps it is the one shown.
+        var plain = new AssetFetcher(http);
+        Assert.Equal(photo, (await plain.ResolveAsync(photo, copied.Relative, deckFolder, CancellationToken.None)).Path);
+
+        // Unless it has gone, and then the session still has what it needs.
+        File.Delete(photo);
+        Assert.Equal(copied.Path, (await plain.ResolveAsync(photo, copied.Relative, deckFolder, CancellationToken.None)).Path);
     }
 }

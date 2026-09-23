@@ -279,9 +279,12 @@ public sealed class ConversationPanel : Border
     {
         _contextText.Text = label;
         _context.IsVisible = true;
-        _input.PlaceholderText = "Ask about it…";
+        _input.PlaceholderText = $"What about “{Short(label)}”? ↵ asks for more about it";
         FocusInput();
     }
+
+    /// <summary>A label short enough to sit in the box without pushing the rest out.</summary>
+    private static string Short(string label) => label.Length <= 28 ? label : label[..27] + "…";
 
     public void ClearContext()
     {

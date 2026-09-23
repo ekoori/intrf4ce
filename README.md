@@ -81,8 +81,9 @@ press play, however much the agent adds in the meantime.
 | Linux | `$XDG_CONFIG_HOME/intrf4ce/settings.yaml` (or `~/.config/intrf4ce`) |
 
 **Sessions.** Each presentation is a folder under `sessions`, beside the executable, holding its
-`deck.json` and every image it uses — pictures from the web and files from your own disk are both
-copied in — so the folder can be moved to another machine and still present. They are listed on
+`deck.json` and the images it downloaded. A picture already on your machine is pointed at where it
+lives rather than duplicated — a folder of photographs is yours, in one place — so set
+`library.copy_media: true` when a session has to travel and should carry everything it shows; so the folder can be moved to another machine and still present. They are listed on
 the left (`L`): open one and it comes back where it was, with the agent returned to the
 conversation that built it, free to carry on or rewrite it. If the folder beside the executable
 cannot be written (installed under Program Files, say), sessions fall back to `Documents/intrf4ce`,

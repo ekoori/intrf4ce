@@ -146,8 +146,20 @@ public sealed class StageSettings
 
 public sealed class LibrarySettings
 {
-    /// <summary>Where decks are kept; empty for Documents/intrf4ce.</summary>
+    /// <summary>Where sessions are kept; empty for <c>sessions</c> beside the executable.</summary>
     public string Folder { get; set; } = "";
+
+    /// <summary>
+    /// Copy images from elsewhere on this machine into the session, rather than pointing at
+    /// where they live.
+    /// </summary>
+    /// <remarks>
+    /// Off, because a folder of holiday photographs is the user's, in one place, and a
+    /// presentation about it has no business duplicating gigabytes. Turn it on when a session
+    /// has to travel: it then holds every picture it shows. Images from the web are downloaded
+    /// either way — there is nowhere else for them to live.
+    /// </remarks>
+    public bool CopyMedia { get; set; }
 }
 
 /// <param name="Error">Why the file could not be used at all (defaults are in force).</param>
@@ -287,6 +299,8 @@ public static class SettingsFile
             later.Add("library.folder");
         }
 
+        live.Library.CopyMedia = loaded.Library.CopyMedia;
+
         return later;
     }
 
@@ -411,6 +425,8 @@ public static class SettingsFile
           follow_agent: false     # jump to each new slide as the agent adds it
 
         library:
-          folder: ""              # where decks live; empty for Documents/intrf4ce
+          folder: ""              # where sessions live; empty for "sessions" beside intrf4ce
+          copy_media: false       # true copies images from this machine into the session, so it
+                                  # can be moved elsewhere; off keeps a reference to where they are
         """;
 }

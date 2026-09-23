@@ -36,6 +36,7 @@ public sealed class MainWindow : Window
     private readonly HttpClient _http;
     private readonly HttpClient _api;
     private readonly WebRenderService _renderer;
+    private readonly AssetFetcher _fetcher;
     private readonly AudioSystem _audio = new();
     private readonly VoiceService _voices;
     private readonly Narrator _narrator;
@@ -77,7 +78,7 @@ public sealed class MainWindow : Window
         store.AdoptFrom(AppPaths.LegacyLibrary, Log.Write);
         _decks = new DeckService(store);
         _http = AssetFetcher.CreateClient();
-        var fetcher = new AssetFetcher(_http);
+        var fetcher = new AssetFetcher(_http) { CopyMedia = settings.Library.CopyMedia };
         var images = new ImageLoader(fetcher, _decks);
         _renderer = new WebRenderService(_theme.Renderer);
 
@@ -100,6 +101,7 @@ public sealed class MainWindow : Window
             FollowAgent = settings.Stage.FollowAgent,
         };
 
+        _fetcher = fetcher;
         var media = new MediaTools(fetcher, Path.Combine(paths.Cache, "inspect"));
         var tools = new PresenterTools(_decks, _controller, _events, media);
         var catalog = ToolCatalog.Load();
@@ -326,6 +328,7 @@ public sealed class MainWindow : Window
         }
 
         var later = SettingsFile.ApplyLive(_settings, load.Settings);
+        _fetcher.CopyMedia = _settings.Library.CopyMedia;
         _stage.AnimationSpeed = _settings.Stage.AnimationSpeed;
         _controller.FollowAgent = _settings.Stage.FollowAgent;
         _narrator.SettingsChanged();
@@ -420,7 +423,13 @@ public sealed class MainWindow : Window
         return meta;
     }
 
-    /// <summary>Right-click on the stage: ask about the part under the pointer, or zoom to it.</summary>
+    /// <summary>
+    /// Right-click on the stage: a question about whatever is under the pointer.
+    /// </summary>
+    /// <remarks>
+    /// Choosing it frames the thing on the stage as well as aiming the question at it, so the
+    /// user can see what they are about to ask about before they have typed a word.
+    /// </remarks>
     private void OnStageContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         var screen = e.TryGetPosition(_stage, out var point) ? point : new Point(_stage.Bounds.Width / 2, _stage.Bounds.Height / 2);
@@ -432,23 +441,19 @@ public sealed class MainWindow : Window
         e.Handled = true;
         var label = subject.Label.Length > 48 ? subject.Label[..47] + "…" : subject.Label;
 
-        var ask = new MenuItem { Header = $"Ask about “{label}”…" };
+        var ask = new MenuItem { Header = $"Ask about “{label}”" };
         ask.Click += (_, _) =>
         {
             _asking = subject;
             _chat.SetContext(label);
+            if (subject.Target is { } target)
+            {
+                _controller.Focus(target, null);
+            }
         };
 
         var menu = new ContextMenu();
         menu.Items.Add(ask);
-
-        if (subject.Target is { } target && target.Contains('.', StringComparison.Ordinal))
-        {
-            var zoom = new MenuItem { Header = "Zoom to it" };
-            zoom.Click += (_, _) => _controller.Focus(target, null);
-            menu.Items.Add(zoom);
-        }
-
         menu.Open(_stage);
     }
 

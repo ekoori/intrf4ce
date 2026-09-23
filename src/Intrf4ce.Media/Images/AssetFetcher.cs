@@ -13,6 +13,11 @@ namespace Intrf4ce.Media.Images;
 /// Everything a slide shows is brought into the session's folder: a URL is downloaded once and
 /// recorded, so a saved presentation still shows its pictures offline and years later.
 /// <para>
+/// A file already on this machine is pointed at where it lies, because a folder of photographs
+/// belongs to the user and a presentation about it should not duplicate it; <see cref="CopyMedia"/>
+/// brings them in for a session that has to travel.
+/// </para>
+/// <para>
 /// Downloads queue and a host that asks for a slower pace is waited out. Some sites refuse
 /// applications outright, and no amount of trying changes that, so a refusal comes back in
 /// words the agent can act on — find the picture somewhere else — rather than as a status code.
@@ -65,14 +70,8 @@ public sealed class AssetFetcher(HttpClient http)
     {
         ArgumentNullException.ThrowIfNull(source);
 
-        if (recorded is not null)
-        {
-            var existing = Path.GetFullPath(Path.Combine(deckFolder, recorded));
-            if (File.Exists(existing))
-            {
-                return (existing, recorded);
-            }
-        }
+        var kept = recorded is { } r ? Path.GetFullPath(Path.Combine(deckFolder, r)) : null;
+        var hasKept = kept is not null && File.Exists(kept);
 
         if (!IsUrl(source))
         {
@@ -87,21 +86,33 @@ public sealed class AssetFetcher(HttpClient http)
             }
 
             path = Path.GetFullPath(path);
-            if (!File.Exists(path))
+            if (File.Exists(path))
             {
-                throw new FileNotFoundException($"no file at {path}");
+                // Already inside the session, or the user would rather it stayed where it is.
+                if (!CopyMedia
+                    || path.StartsWith(Path.GetFullPath(deckFolder) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    return (path, null);
+                }
+
+                if (hasKept)
+                {
+                    return (kept!, recorded);
+                }
+
+                var copy = Beside(deckFolder, source, Path.GetExtension(path));
+                Directory.CreateDirectory(Path.GetDirectoryName(copy.Target)!);
+                File.Copy(path, copy.Target, overwrite: true);
+                return (copy.Target, copy.Relative);
             }
 
-            // Already inside the session: leave it where it is.
-            if (path.StartsWith(Path.GetFullPath(deckFolder) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            {
-                return (path, null);
-            }
+            // The original has been moved or deleted; a copy the session kept still shows it.
+            return hasKept ? (kept!, recorded) : throw new FileNotFoundException($"no file at {path}");
+        }
 
-            var copy = Beside(deckFolder, source, Path.GetExtension(path));
-            Directory.CreateDirectory(Path.GetDirectoryName(copy.Target)!);
-            File.Copy(path, copy.Target, overwrite: true);
-            return (copy.Target, copy.Relative);
+        if (hasKept)
+        {
+            return (kept!, recorded);
         }
 
         var (bytes, extension) = await DownloadAsync(source, cancellationToken).ConfigureAwait(false);
@@ -134,6 +145,11 @@ public sealed class AssetFetcher(HttpClient http)
             Downloads.Release();
         }
     }
+
+    /// <summary>
+    /// Copy images from elsewhere on this machine into the session instead of referencing them.
+    /// </summary>
+    public bool CopyMedia { get; set; }
 
     /// <summary>How long to wait after a host asks for a slower pace; overridden in tests.</summary>
     public Func<int, TimeSpan> Backoff { get; init; } = attempt => TimeSpan.FromSeconds(1.5 * (attempt + 1));
