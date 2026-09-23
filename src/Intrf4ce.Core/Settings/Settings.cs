@@ -75,6 +75,12 @@ public sealed class ElevenLabsSettings
     /// <summary>Stop using ElevenLabs when the account has fewer characters left than this.</summary>
     public int KeepInReserve { get; set; } = 2000;
 
+    /// <summary>
+    /// How many clips intrf4ce asks for at once. Plans allow only a few requests in parallel
+    /// (three on Starter) and count every application using the key, so this stays below it.
+    /// </summary>
+    public int MaxConcurrent { get; set; } = 2;
+
     public double Stability { get; set; } = 0.5;
 
     public double SimilarityBoost { get; set; } = 0.75;
@@ -246,6 +252,11 @@ public static class SettingsFile
             later.Add("elevenlabs.key_file");
         }
 
+        if (live.ElevenLabs.MaxConcurrent != loaded.ElevenLabs.MaxConcurrent)
+        {
+            later.Add("elevenlabs.max_concurrent");
+        }
+
         live.ElevenLabs.VoiceId = loaded.ElevenLabs.VoiceId;
         live.ElevenLabs.ModelId = loaded.ElevenLabs.ModelId;
         live.ElevenLabs.MonthlyCap = loaded.ElevenLabs.MonthlyCap;
@@ -373,6 +384,7 @@ public static class SettingsFile
                                   # or the ELEVENLABS_API_KEY environment variable
           monthly_cap: 30000      # characters intrf4ce may spend per month
           keep_in_reserve: 2000   # stop when the account has fewer than this left
+          max_concurrent: 2       # clips asked for at once; plans allow only a few (3 on Starter)
           stability: 0.5
           similarity_boost: 0.75
           style: 0

@@ -19,9 +19,9 @@ namespace Intrf4ce.Media.Tts;
 /// cues within a word or two. Other platforms get their own engines in M4.
 /// </remarks>
 [SupportedOSPlatform("windows")]
-public sealed class SystemVoiceEngine(SystemVoiceSettings settings, string cacheFolder) : ITtsEngine
+public sealed class SystemVoiceEngine(SystemVoiceSettings settings, VoiceCache clips) : ITtsEngine
 {
-    private readonly string _cache = Path.Combine(cacheFolder, "system");
+    private const string Kind = "system";
 
     public string Name => "system voice";
 
@@ -40,11 +40,12 @@ public sealed class SystemVoiceEngine(SystemVoiceSettings settings, string cache
     private VoiceClip Synthesize(string text)
     {
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{settings.Voice}{settings.Rate}{text}")))[..32].ToLowerInvariant();
-        var path = Path.Combine(_cache, key + ".wav");
+        var name = key + ".wav";
+        var kept = clips.Existing(Kind, name);
+        var path = Path.Combine(kept ?? clips.Target(Kind), name);
 
-        if (!File.Exists(path))
+        if (kept is null)
         {
-            Directory.CreateDirectory(_cache);
             var temporary = path + ".tmp";
 
             using (var synth = new SpeechSynthesizer())
@@ -68,6 +69,7 @@ public sealed class SystemVoiceEngine(SystemVoiceSettings settings, string cache
             }
 
             File.Move(temporary, path, overwrite: true);
+            clips.Share(Kind, Path.GetDirectoryName(path)!, name);
         }
 
         var levels = Envelope.FromFile(path);

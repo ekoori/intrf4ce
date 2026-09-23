@@ -23,16 +23,19 @@ namespace Intrf4ce.Media.Tts;
 /// </remarks>
 public sealed class CommandVoiceEngine : ITtsEngine
 {
+    private const string Kind = "command";
+
     private readonly SystemVoiceSettings _settings;
-    private readonly string _cache;
+    private readonly VoiceCache _clips;
     private readonly Tool? _tool;
 
-    public CommandVoiceEngine(SystemVoiceSettings settings, string cacheFolder)
+    public CommandVoiceEngine(SystemVoiceSettings settings, VoiceCache clips)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(clips);
 
         _settings = settings;
-        _cache = Path.Combine(cacheFolder, "command");
+        _clips = clips;
         _tool = Find();
     }
 
@@ -82,11 +85,12 @@ public sealed class CommandVoiceEngine : ITtsEngine
     private async Task<VoiceClip> SpeakAsync(string text, Tool tool, CancellationToken cancellationToken)
     {
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{tool.Name}{_settings.Voice}{_settings.Rate}{text}")))[..32].ToLowerInvariant();
-        var path = Path.Combine(_cache, key + ".wav");
+        var name = key + ".wav";
+        var kept = _clips.Existing(Kind, name);
+        var path = Path.Combine(kept ?? _clips.Target(Kind), name);
 
-        if (!File.Exists(path))
+        if (kept is null)
         {
-            Directory.CreateDirectory(_cache);
             var temporary = path + ".tmp";
             await RunAsync(tool, text, temporary, cancellationToken).ConfigureAwait(false);
 
@@ -96,6 +100,7 @@ public sealed class CommandVoiceEngine : ITtsEngine
             }
 
             File.Move(temporary, path, overwrite: true);
+            _clips.Share(Kind, Path.GetDirectoryName(path)!, name);
         }
 
         var levels = Envelope.FromFile(path);

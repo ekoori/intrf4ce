@@ -64,6 +64,10 @@ source landed, so nothing is fetched twice and the folder still presents on a ma
 never seen the original. A gallery whose folder has since gone falls back to the copies the
 session kept.
 
+Narration lives there too, under `audio/`: clips are named by content, so a presentation that
+has been spoken once is spoken for ever, and a folder carried to another machine plays without a
+key. A machine-wide cache sits behind the session and is copied from, never depended on.
+
 Reopening one restores the deck, puts the hosted agent back on the conversation that built it
 (the session id is kept on the deck), and sends the agent a `resume` event so it knows what it
 is looking at before the user asks for anything.

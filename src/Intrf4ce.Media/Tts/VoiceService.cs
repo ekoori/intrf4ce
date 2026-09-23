@@ -19,11 +19,15 @@ public sealed class VoiceService
     private readonly ConcurrentDictionary<string, Task<VoiceClip>> _inFlight = new(StringComparer.Ordinal);
     private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
 
-    public VoiceService(IReadOnlyList<ITtsEngine> engines, ElevenLabsEngine? elevenLabs)
+    public VoiceService(IReadOnlyList<ITtsEngine> engines, ElevenLabsEngine? elevenLabs, VoiceCache clips)
     {
         _engines = engines;
         ElevenLabs = elevenLabs;
+        Clips = clips;
     }
+
+    /// <summary>Where clips are kept; point <see cref="VoiceCache.Session"/> at the open deck.</summary>
+    public VoiceCache Clips { get; }
 
     /// <summary>A voice fell back, with the reason, reported once per distinct reason.</summary>
     public event EventHandler<string>? Notice;
@@ -52,28 +56,29 @@ public sealed class VoiceService
         ArgumentNullException.ThrowIfNull(paths);
 
         Envelope.Audio = audio;
+        var clips = new VoiceCache(paths.VoiceCache);
         var engines = new List<ITtsEngine>();
         ElevenLabsEngine? eleven = null;
         var choice = settings.Narration.Engine.ToLowerInvariant();
 
         if (choice is "auto" or "elevenlabs")
         {
-            eleven = new ElevenLabsEngine(http, SettingsFile.ElevenLabsKey(paths, settings.ElevenLabs), settings.ElevenLabs, paths.VoiceCache);
+            eleven = new ElevenLabsEngine(http, SettingsFile.ElevenLabsKey(paths, settings.ElevenLabs), settings.ElevenLabs, clips);
             engines.Add(eleven);
         }
 
         if (choice is not "none" && OperatingSystem.IsWindows())
         {
-            engines.Add(new SystemVoiceEngine(settings.SystemVoice, paths.VoiceCache));
+            engines.Add(new SystemVoiceEngine(settings.SystemVoice, clips));
         }
-        else if (choice is not "none" && new CommandVoiceEngine(settings.SystemVoice, paths.VoiceCache) is { IsAvailable: true } command)
+        else if (choice is not "none" && new CommandVoiceEngine(settings.SystemVoice, clips) is { IsAvailable: true } command)
         {
             // macOS and Linux speak through whatever they have: say, piper or espeak.
             engines.Add(command);
         }
 
         engines.Add(new SilentEngine(settings.Narration.ReadingSpeed));
-        return new VoiceService(engines, eleven);
+        return new VoiceService(engines, eleven, clips);
     }
 
     /// <summary>Speech for <paramref name="text"/>, from the best voice that will do it.</summary>

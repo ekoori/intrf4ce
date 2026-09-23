@@ -87,6 +87,11 @@ public sealed class MainWindow : Window
         _api.DefaultRequestHeaders.UserAgent.ParseAdd("intrf4ce/0.1");
         _voices = VoiceService.Create(settings, paths, _api, _audio);
 
+        // Narration is kept with the presentation that speaks it, so reopening one — or copying
+        // its folder to another machine — plays without paying for the words again.
+        _voices.Clips.Session = () =>
+            _decks.Current is { } open ? Path.Combine(_decks.Store.FolderOf(open.Id), "audio") : null;
+
         _stage = new StageView(_theme) { AnimationSpeed = settings.Stage.AnimationSpeed };
         _root = new Grid();
         var context = new ElementContext(_theme, _renderer, images, PublishFromStage);

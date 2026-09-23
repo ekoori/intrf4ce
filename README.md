@@ -101,10 +101,14 @@ credit (or fail, when that account has none and your subscription would have wor
 own business: `claude auth status` says, and `claude auth login --claudeai` signs it into a
 subscription.
 
-**ElevenLabs.** With a key, narration is spoken by ElevenLabs and cached by content, so the same
-sentence is never paid for twice; before each synthesis the account is checked against
-`monthly_cap` and `keep_in_reserve`, and intrf4ce falls back to the system voice rather than
-overspend. Give the key as a path to a file (`elevenlabs.key_file`), in `secrets.yaml`, or in
+**ElevenLabs.** With a key, narration is spoken by ElevenLabs and kept with the presentation, in
+the session's own `audio` folder: a presentation narrated once is narrated for ever, and a session
+copied to another machine plays without a key or a network. A machine-wide cache sits behind it,
+so the same sentence in a second presentation is not paid for twice either. Requests queue —
+`max_concurrent`, 2 by default, because a plan allows only a few at once (three on Starter) and
+everything using the key counts — and a refusal for being busy is waited out rather than handing
+the line to another voice.Before each synthesis the account is checked against `monthly_cap` and
+`keep_in_reserve`, and intrf4ce falls back to the system voice rather than overspend. Give the key as a path to a file (`elevenlabs.key_file`), in `secrets.yaml`, or in
 `ELEVENLABS_API_KEY` — never in `settings.yaml`, which is meant to be shareable:
 
 ```yaml
