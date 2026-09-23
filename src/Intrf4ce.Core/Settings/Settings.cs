@@ -114,6 +114,17 @@ public sealed class AgentSettings
     /// <summary>Give the hosted agent only intrf4ce's tools, not every MCP server you have configured.</summary>
     public bool StrictMcp { get; set; } = true;
 
+    /// <summary>
+    /// Let the agent use an <c>ANTHROPIC_API_KEY</c> from the environment, which bills the
+    /// presentation to API credit rather than to the subscription the agent is signed in with.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, and the variable is hidden from the agent, because inheriting a key
+    /// left in the environment for something else is how a presentation quietly starts
+    /// costing money — or fails, when that account has no credit and the subscription did.
+    /// </remarks>
+    public bool UseApiKey { get; set; }
+
     /// <summary>Extra arguments appended to the command line.</summary>
     public List<string> ExtraArgs { get; set; } = [];
 }
@@ -254,6 +265,7 @@ public static class SettingsFile
         if (live.Agent.Mode != loaded.Agent.Mode || live.Agent.Command != loaded.Agent.Command
             || live.Agent.Model != loaded.Agent.Model || live.Agent.PermissionMode != loaded.Agent.PermissionMode
             || live.Agent.WorkingDirectory != loaded.Agent.WorkingDirectory || live.Agent.StrictMcp != loaded.Agent.StrictMcp
+            || live.Agent.UseApiKey != loaded.Agent.UseApiKey
             || !live.Agent.AllowedTools.SequenceEqual(loaded.Agent.AllowedTools) || !live.Agent.ExtraArgs.SequenceEqual(loaded.Agent.ExtraArgs))
         {
             later.Add("agent");
@@ -372,6 +384,8 @@ public static class SettingsFile
 
         agent:
           mode: hosted            # hosted: intrf4ce runs Claude Code for you. attached: you connect your own.
+          use_api_key: false      # true lets ANTHROPIC_API_KEY from your environment bill the
+                                  # agent to API credit instead of its own signed-in account
           command: claude
           model: ""               # empty for Claude Code's default
           permission_mode: dontAsk

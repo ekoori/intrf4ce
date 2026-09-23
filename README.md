@@ -94,6 +94,13 @@ run a second instance beside a real one.
 Saving the file applies what can change immediately — voice, pacing, volume, subtitles, animation
 speed. Changing the agent or the engine tells you it needs a restart.
 
+**The hosted agent's billing.** intrf4ce hides `ANTHROPIC_API_KEY` from the agent it runs, so a
+key left in your environment for something else cannot quietly bill your presentations to API
+credit (or fail, when that account has none and your subscription would have worked). Set
+`agent.use_api_key: true` if that is what you want. Which account the agent uses is Claude Code's
+own business: `claude auth status` says, and `claude auth login --claudeai` signs it into a
+subscription.
+
 **ElevenLabs.** With a key, narration is spoken by ElevenLabs and cached by content, so the same
 sentence is never paid for twice; before each synthesis the account is checked against
 `monthly_cap` and `keep_in_reserve`, and intrf4ce falls back to the system voice rather than

@@ -107,6 +107,7 @@ public class SettingsTests
         loaded.ElevenLabs.VoiceId = "another-voice";
         loaded.Stage.AnimationSpeed = 0.5;
         loaded.Agent.Model = "opus";
+        loaded.Agent.UseApiKey = true;
         loaded.Library.Folder = @"D:\decks";
 
         var later = SettingsFile.ApplyLive(live, loaded);

@@ -316,6 +316,14 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
         // appears; with only intrf4ce's sixteen tools there is nothing to save by deferring.
         start.Environment["ENABLE_TOOL_SEARCH"] = "false";
 
+        // An API key left in the environment for something else would bill the presentation to
+        // API credit instead of the account the agent is signed in with, and fail outright when
+        // that credit has run out. The user asks for it in settings or it does not happen.
+        if (!settings.UseApiKey)
+        {
+            start.Environment.Remove("ANTHROPIC_API_KEY");
+        }
+
         // A .cmd shim from npm cannot be started directly without a shell.
         if (executable.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || executable.EndsWith(".bat", StringComparison.OrdinalIgnoreCase))
         {
