@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,14 +10,23 @@ namespace Intrf4ce.Media.Images;
 /// Turns an image source the agent named into a file on disk.
 /// </summary>
 /// <remarks>
-/// Local paths are used where they are, so a gallery of a thousand holiday photos is not
-/// copied into every deck. URLs are downloaded once into the deck's assets folder and
-/// recorded, so a saved deck still shows its pictures offline and years later.
+/// Everything a slide shows is brought into the session's folder: a URL is downloaded once and
+/// recorded, so a saved presentation still shows its pictures offline and years later.
+/// <para>
+/// Downloads queue and a host that asks for a slower pace is waited out. Some sites refuse
+/// applications outright, and no amount of trying changes that, so a refusal comes back in
+/// words the agent can act on — find the picture somewhere else — rather than as a status code.
+/// </para>
 /// </remarks>
 public sealed class AssetFetcher(HttpClient http)
 {
     /// <summary>Anything bigger is not a slide image.</summary>
     public const long MaxBytes = 40L * 1024 * 1024;
+
+    private const int Attempts = 3;
+
+    /// <summary>A deck full of pictures must not arrive as a stampede on one host.</summary>
+    private static readonly SemaphoreSlim Downloads = new(3);
 
     public static HttpClient CreateClient()
     {
@@ -114,10 +124,43 @@ public sealed class AssetFetcher(HttpClient http)
 
     public async Task<(byte[] Bytes, string Extension)> DownloadAsync(string url, CancellationToken cancellationToken)
     {
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+        await Downloads.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            throw new HttpRequestException($"{(int)response.StatusCode} {response.ReasonPhrase} from {url}");
+            return await GetAsync(url, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Downloads.Release();
+        }
+    }
+
+    /// <summary>How long to wait after a host asks for a slower pace; overridden in tests.</summary>
+    public Func<int, TimeSpan> Backoff { get; init; } = attempt => TimeSpan.FromSeconds(1.5 * (attempt + 1));
+
+    private async Task<(byte[] Bytes, string Extension)> GetAsync(string url, CancellationToken cancellationToken)
+    {
+        HttpResponseMessage response;
+        for (var attempt = 0; ; attempt++)
+        {
+            response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                break;
+            }
+
+            var busy = response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable;
+            if (busy && attempt + 1 < Attempts)
+            {
+                var wait = response.Headers.RetryAfter?.Delta ?? Backoff(attempt);
+                response.Dispose();
+                await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            var status = response.StatusCode;
+            response.Dispose();
+            throw new HttpRequestException(Refusal(status, url));
         }
 
         var type = response.Content.Headers.ContentType?.MediaType ?? "";
@@ -143,7 +186,25 @@ public sealed class AssetFetcher(HttpClient http)
         var extension = ExtensionFor(type, bytes)
             ?? throw new InvalidDataException($"{url} is not an image (it is {(type.Length > 0 ? type : "unknown")}); link to the image file itself, not the page showing it");
 
+        response.Dispose();
         return (bytes, extension);
+    }
+
+    /// <summary>What a refusal means, and what to do about it, rather than a number.</summary>
+    private static string Refusal(HttpStatusCode status, string url)
+    {
+        var host = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
+        return status switch
+        {
+            HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized =>
+                $"{host} refuses downloads by applications ({(int)status}). Some sites, Fandom and most social networks among them, only serve images to browsers. "
+                + "Take the picture from somewhere that allows it — Wikimedia Commons is reliable — rather than trying this one another way.",
+            HttpStatusCode.NotFound or HttpStatusCode.Gone =>
+                $"there is no file at {url} ({(int)status}); link to the image file itself, not the page showing it",
+            HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable =>
+                $"{host} is asking for a slower pace ({(int)status}) and was still doing so after {Attempts} tries; leave it a minute, or use another host",
+            _ => $"{host} returned {(int)status} for {url}",
+        };
     }
 
     /// <summary>From the content type, or failing that the file's own signature.</summary>
