@@ -43,6 +43,12 @@ public sealed class ImageView : ElementView
     /// <summary>Where the picture is drawn, in this view's coordinates.</summary>
     public Rect ImageRect => _imageRect;
 
+    /// <summary>The decoded picture, for a closer look at it than a slide has room for.</summary>
+    public Avalonia.Media.Imaging.Bitmap? Picture => _bitmap.Source as Avalonia.Media.Imaging.Bitmap;
+
+    /// <summary>The same, when the picture is a drawing rather than a photograph.</summary>
+    public SvgPicture? Vector => _vector.Picture;
+
     public override IReadOnlyList<string> Parts => Image.Callouts?.Select(c => c.Id).ToList() ?? [];
 
     public override Rect? PartBounds(string part)

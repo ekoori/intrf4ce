@@ -55,6 +55,7 @@ public sealed class MainWindow : Window
     private readonly SlideNav _nav;
     private readonly SessionsPanel _sessions;
     private readonly SettingsPanel _preferences;
+    private readonly ImageInspector _inspector;
     private readonly AppPaths _paths;
     private readonly AppSettings _settings;
     private readonly SettingsWatcher? _watcher;
@@ -130,6 +131,7 @@ public sealed class MainWindow : Window
         _nav = new SlideNav(_theme);
         _sessions = new SessionsPanel(_theme);
         _preferences = new SettingsPanel(_theme, paths.SettingsFile);
+        _inspector = new ImageInspector(_theme);
         _welcome = new WelcomePanel(_theme);
         _subtitles = new SubtitleBar(_theme);
         _narrator = new Narrator(_voices, _audio, _controller, _subtitles, _chat.Orb, settings.Narration);
@@ -160,6 +162,7 @@ public sealed class MainWindow : Window
         presentation.Children.Add(_subtitles);
         presentation.Children.Add(_transport);
         presentation.Children.Add(_nav);
+        presentation.Children.Add(_inspector);
         presentation.Children.Add(_preferences);
 
         // Sessions on the left, the stage in the middle, the conversation on the right.
@@ -277,7 +280,24 @@ public sealed class MainWindow : Window
             _controller.Click(world);
         };
         _stage.ContextRequested += OnStageContextRequested;
-        _stage.DoubleTapped += (_, _) => _controller.Reframe();
+
+        // A double-click on a picture gives it the whole window; anywhere else it is the old
+        // "put the slide back the way it was".
+        _stage.DoubleTapped += (_, e) =>
+        {
+            if (_controller.ImageAt(_stage.ScreenToWorld(e.GetPosition(_stage))) is { } picture)
+            {
+                _inspector.Show(picture);
+            }
+            else
+            {
+                _controller.Reframe();
+            }
+        };
+
+        _inspector.ContextRequested += OnInspectorContextRequested;
+        _inspector.Asked += (_, question) => AskAboutRegion(question);
+        _inspector.Closed += (_, _) => _stage.Focus();
         _stage.PointerPressed += (_, _) => _stage.Focus();
         _stage.Focusable = true;
 
@@ -668,6 +688,14 @@ public sealed class MainWindow : Window
             meta["target"] = target;
         }
 
+        // The same coordinates the agent writes callouts in, so it can zoom there, read that
+        // part of the picture with inspect_image, or label it.
+        if (subject.Region is [var x, var y, var w, var h])
+        {
+            meta["region"] = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture, $"{x:0.###},{y:0.###},{w:0.###},{h:0.###}");
+        }
+
         return meta;
     }
 
@@ -703,6 +731,35 @@ public sealed class MainWindow : Window
         var menu = new ContextMenu();
         menu.Items.Add(ask);
         menu.Open(_stage);
+    }
+
+    /// <summary>Right-click inside the enlarged picture: ask about the box drawn on it.</summary>
+    private void OnInspectorContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (_inspector.Question() is not { } question)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var label = question.Label.Length > 52 ? question.Label[..51] + "…" : question.Label;
+        var ask = new MenuItem { Header = $"Ask about {(question.Region is null ? "this picture" : $"“{label}”")}" };
+        ask.Click += (_, _) => _inspector.Ask();
+
+        var menu = new ContextMenu();
+        menu.Items.Add(ask);
+        menu.Open(_inspector);
+    }
+
+    /// <summary>
+    /// A question about part of a picture: the stage zooms there and the box is what the
+    /// question is about.
+    /// </summary>
+    private void AskAboutRegion(ImageQuestion question)
+    {
+        _asking = new AskSubject(question.SlideId, question.ElementId, question.ElementId, question.Label, question.Region);
+        _chat.SetContext(question.Label);
+        _controller.Focus(question.ElementId, question.Region);
     }
 
     private void OnAgentActivity(AgentActivity activity)
@@ -833,7 +890,20 @@ public sealed class MainWindow : Window
             return;
         }
 
-        // The settings panel is over everything, so it takes Escape before anything else does.
+        // The enlarged picture and the settings panel are over everything, so they take Escape
+        // before anything underneath does.
+        if (_inspector.IsVisible)
+        {
+            if (e.Key is Key.Escape)
+            {
+                _inspector.Close();
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+
         if (_preferences.IsVisible)
         {
             if (e.Key is Key.Escape or Key.OemComma)

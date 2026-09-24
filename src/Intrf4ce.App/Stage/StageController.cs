@@ -247,6 +247,13 @@ public sealed class StageController : IStage
         }
     }
 
+    /// <summary>
+    /// The picture under a point on the current slide, for a closer look at it; null if there
+    /// is none there.
+    /// </summary>
+    public ImageView? ImageAt(Point world) =>
+        _overview || SlideIndexAt(world) != _current ? null : HitTest(world)?.Element as ImageView;
+
     /// <summary>What a right-click would ask about: the part under the pointer, its element, or the slide.</summary>
     public AskSubject? SubjectAt(Point world)
     {
