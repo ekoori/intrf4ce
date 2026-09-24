@@ -501,6 +501,7 @@ public sealed class MainWindow : Window
         }
 
         _chat.SetStatus("Stopping…");
+        _chat.AddNote($"stopped · {DateTime.Now:HH:mm}");
         _ = _agent.InterruptAsync().ContinueWith(
             _ => Dispatcher.UIThread.Post(UpdateHud), TaskScheduler.Default);
     }

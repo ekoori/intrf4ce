@@ -70,6 +70,7 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
     private StreamWriter? _stdin;
     private int _restarts;
     private int _controls;
+    private volatile bool _stopping;
 
     public ClaudeCodeHost(HostedAgentOptions options, Action<string> log)
     {
@@ -188,6 +189,7 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             return;
         }
 
+        _stopping = true;
         var request = new JsonObject
         {
             ["type"] = "control_request",
@@ -226,6 +228,7 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             ["message"] = new JsonObject { ["role"] = "user", ["content"] = text },
         };
 
+        _stopping = false;
         if (TryWrite(message))
         {
             SetStatus(AgentStatus.Working);
@@ -524,7 +527,13 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
                 SessionId = message["session_id"]?.GetValue<string>() ?? SessionId;
                 SetStatus(AgentStatus.Idle);
 
-                if (message["is_error"]?.GetValue<bool>() == true || subtype is not "success")
+                // A turn the user stopped ends as an error as far as the CLI is concerned
+                // ("error_during_execution"); saying so in red would be calling the button a
+                // failure.
+                var stopped = _stopping;
+                _stopping = false;
+
+                if (!stopped && (message["is_error"]?.GetValue<bool>() == true || subtype is not "success"))
                 {
                     var error = message["result"]?.GetValue<string>() ?? subtype ?? "the turn failed";
                     Activity?.Invoke(this, new AgentActivity(AgentActivityKind.Error, error));
