@@ -15,14 +15,17 @@ namespace Intrf4ce.App.Hud;
 /// Every presentation on disk, in a column on the left: pick one up where it was left.
 /// </summary>
 /// <remarks>
-/// Each is a folder under <c>sessions</c> holding its slides and the media they use, so this
-/// list is the app's memory. It opens by itself when there is nothing on the stage and folds
-/// to a strip once a presentation is running, because then the stage is what matters.
+/// Each is a folder under <c>sessions</c> holding its slides, the media they use and the
+/// conversation that built them, so this list is the app's memory. It opens by itself when
+/// there is nothing on the stage and folds to a strip once a presentation is running, because
+/// then the stage is what matters.
+/// <para>
+/// The two things that are not a presentation live at either end: starting a new one at the
+/// top, and the settings at the bottom, which is where a person looks for them.
+/// </para>
 /// </remarks>
 public sealed class SessionsPanel : Border
 {
-    private const string Icon = "M 0,1 H 14 V 3 H 0 Z M 0,6 H 14 V 8 H 0 Z M 0,11 H 14 V 13 H 0 Z";
-
     private readonly Skin _skin;
     private readonly StackPanel _list = new() { Spacing = 6 };
     private readonly ScrollViewer _scroller;
@@ -31,6 +34,9 @@ public sealed class SessionsPanel : Border
     private readonly TextBlock _hint;
     private readonly DockPanel _header;
     private readonly Path _icon;
+    private readonly Border _new;
+    private readonly Border _settings;
+    private readonly IconButton _gear;
     private readonly List<(string Id, Border Row)> _rows = [];
     private double _preferred = 300;
     private int _index;
@@ -46,7 +52,7 @@ public sealed class SessionsPanel : Border
 
         _icon = new Path
         {
-            Data = Geometry.Parse(Icon),
+            Data = Geometry.Parse(Glyph.Lines),
             Fill = skin.Brush(skin.Muted),
             Width = 14,
             Height = 14,
@@ -86,6 +92,19 @@ public sealed class SessionsPanel : Border
             TextWrapping = TextWrapping.Wrap,
         };
 
+        _new = Action(Glyph.Plus, "New presentation", "Start a fresh session (N)", () => NewRequested?.Invoke(this, EventArgs.Empty), accent: true);
+        _new.Margin = new Thickness(12, 0, 12, 12);
+
+        _settings = Action(Glyph.Gear, "Settings", "Voice, subtitles, pacing (,)", () => SettingsRequested?.Invoke(this, EventArgs.Empty));
+        _settings.Margin = new Thickness(12, 8, 12, 14);
+
+        _gear = new IconButton(skin, Glyph.Gear, "Settings (,)", () => SettingsRequested?.Invoke(this, EventArgs.Empty), size: 34)
+        {
+            IsVisible = false,
+            Margin = new Thickness(0, 0, 0, 14),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+
         _list.Children.Add(_empty);
         _scroller = new ScrollViewer
         {
@@ -96,7 +115,13 @@ public sealed class SessionsPanel : Border
 
         var layout = new DockPanel();
         DockPanel.SetDock(_header, Dock.Top);
+        DockPanel.SetDock(_new, Dock.Top);
+        DockPanel.SetDock(_gear, Dock.Bottom);
+        DockPanel.SetDock(_settings, Dock.Bottom);
         layout.Children.Add(_header);
+        layout.Children.Add(_new);
+        layout.Children.Add(_gear);
+        layout.Children.Add(_settings);
         layout.Children.Add(_scroller);
         Child = layout;
 
@@ -112,6 +137,11 @@ public sealed class SessionsPanel : Border
 
     /// <summary>The user picked a session; the id is its folder name.</summary>
     public event EventHandler<string>? Picked;
+
+    /// <summary>Start again: an empty stage and a conversation with no history behind it.</summary>
+    public event EventHandler? NewRequested;
+
+    public event EventHandler? SettingsRequested;
 
     public bool Collapsed { get; private set; }
 
@@ -149,6 +179,11 @@ public sealed class SessionsPanel : Border
         _scroller.IsVisible = !collapsed;
         _title.IsVisible = !collapsed;
         _hint.IsVisible = !collapsed;
+        _new.IsVisible = !collapsed;
+        _settings.IsVisible = !collapsed;
+
+        // Folded, the strip keeps one way to the settings: they are not worth unfolding for.
+        _gear.IsVisible = collapsed;
         _header.Margin = collapsed ? new Thickness(0, 18, 0, 12) : new Thickness(18, 16, 18, 12);
         _icon.Margin = collapsed ? new Thickness(0) : new Thickness(0, 0, 10, 0);
         _icon.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left;
@@ -192,6 +227,51 @@ public sealed class SessionsPanel : Border
             default:
                 return false;
         }
+    }
+
+    /// <summary>A wide button with an icon and a word, for the two things that are not a session.</summary>
+    private Border Action(string icon, string label, string tooltip, Action click, bool accent = false)
+    {
+        var glyph = new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse(icon),
+            Fill = _skin.Brush(accent ? _skin.Ink : _skin.Muted),
+            Width = 16,
+            Height = 16,
+            Stretch = Stretch.Uniform,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var text = new TextBlock
+        {
+            Text = label,
+            FontSize = 14,
+            Foreground = _skin.Brush(accent ? _skin.Ink : _skin.Text, accent ? 1 : 0.85),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var button = new Border
+        {
+            Padding = new Thickness(12, 9),
+            CornerRadius = new CornerRadius(10),
+            BorderThickness = new Thickness(1),
+            Background = accent ? _skin.Brush(_skin.Accent, 0.9) : _skin.Brush(_skin.Surface2, 0.7),
+            BorderBrush = accent ? _skin.Brush(_skin.Accent) : _skin.Brush(_skin.Line),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { glyph, text } },
+            [ToolTip.TipProperty] = tooltip,
+        };
+
+        button.PointerEntered += (_, _) => button.Background = accent ? _skin.Brush(_skin.Accent) : _skin.Brush(_skin.Surface2);
+        button.PointerExited += (_, _) => button.Background = accent ? _skin.Brush(_skin.Accent, 0.9) : _skin.Brush(_skin.Surface2, 0.7);
+
+        button.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            click();
+        };
+
+        return button;
     }
 
     private void Move(int direction)

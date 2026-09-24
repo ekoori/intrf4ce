@@ -17,6 +17,9 @@ public enum DeckChangeKind
 
     /// <summary>Title, assets or agent session; nothing the stage draws differently.</summary>
     DeckUpdated,
+
+    /// <summary>The deck was put away; the stage is empty and nothing is open.</summary>
+    Closed,
 }
 
 public sealed class DeckChangedEventArgs(DeckChangeKind kind, Deck deck, string? slideId) : EventArgs
@@ -72,6 +75,30 @@ public sealed class DeckService : IDisposable
         var deck = _store.Create(title, _now());
         Publish(DeckChangeKind.Opened, deck, null, save: false);
         return deck;
+    }
+
+    /// <summary>
+    /// Puts the open deck away, saving it first: an empty stage, ready for a new subject.
+    /// </summary>
+    /// <remarks>
+    /// Not the same as deleting it. The session stays on disk with everything in it; the next
+    /// <c>put_slide</c> starts a new one rather than adding to whatever happened to be open.
+    /// </remarks>
+    public void Close()
+    {
+        Flush();
+        Deck? had;
+        lock (_gate)
+        {
+            had = _current;
+            _current = null;
+            _dirty = false;
+        }
+
+        if (had is not null)
+        {
+            Changed?.Invoke(this, new DeckChangedEventArgs(DeckChangeKind.Closed, had, null));
+        }
     }
 
     public Deck Open(string deckId)

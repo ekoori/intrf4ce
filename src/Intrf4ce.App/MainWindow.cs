@@ -50,7 +50,10 @@ public sealed class MainWindow : Window
     private readonly HeaderBar _header;
     private readonly ConversationPanel _chat;
     private readonly TransportBar _transport;
+    private readonly SlideNav _nav;
     private readonly SessionsPanel _sessions;
+    private readonly SettingsPanel _preferences;
+    private readonly AppPaths _paths;
     private readonly AppSettings _settings;
     private readonly SettingsWatcher? _watcher;
     private readonly WelcomePanel _welcome;
@@ -63,6 +66,7 @@ public sealed class MainWindow : Window
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(settings);
+        _paths = paths;
         _settings = settings;
         Title = "intrf4ce";
         Width = 1480;
@@ -120,7 +124,9 @@ public sealed class MainWindow : Window
         _header = new HeaderBar(_theme);
         _chat = new ConversationPanel(_theme);
         _transport = new TransportBar(_theme);
+        _nav = new SlideNav(_theme);
         _sessions = new SessionsPanel(_theme);
+        _preferences = new SettingsPanel(_theme, paths.SettingsFile);
         _welcome = new WelcomePanel(_theme);
         _subtitles = new SubtitleBar(_theme);
         _narrator = new Narrator(_voices, _audio, _controller, _subtitles, _chat.Orb, settings.Narration);
@@ -150,6 +156,8 @@ public sealed class MainWindow : Window
         presentation.Children.Add(_header);
         presentation.Children.Add(_subtitles);
         presentation.Children.Add(_transport);
+        presentation.Children.Add(_nav);
+        presentation.Children.Add(_preferences);
 
         // Sessions on the left, the stage in the middle, the conversation on the right.
         _root.ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto");
@@ -189,21 +197,34 @@ public sealed class MainWindow : Window
         _chat.Submitted += (_, text) => OnChat(text);
         _chat.Dismissed += (_, _) => _stage.Focus();
         _chat.ContextCleared += (_, _) => _asking = null;
+        _chat.StopRequested += (_, _) => StopAgent();
 
-        _transport.Previous += (_, _) => _controller.Previous();
-        _transport.Next += (_, _) => _controller.Next();
+        _nav.Previous += (_, _) => _controller.Previous();
+        _nav.Next += (_, _) => _controller.Next();
+
         _transport.PlayPause += (_, _) =>
         {
             _narrator.Play(_controller.CurrentSlide);
             UpdateHud();
         };
 
-        _transport.Stop += (_, _) =>
+        // Unticking it while a slide is speaking lets that slide finish and stops there, which
+        // is what someone reaching for it means: not "be quiet", but "do not run on".
+        _transport.Continuous += (_, _) =>
         {
-            _narrator.Hold();
+            _narrator.SetContinuous(!_narrator.Continuous);
             UpdateHud();
         };
+
+        _transport.Mute += (_, _) => _narrator.Mute();
+        _transport.Captions += (_, _) => _narrator.ToggleSubtitles();
+
+        _preferences.Changed += (_, change) => ApplySetting(change.Key, change.Value);
+        _preferences.Close += (_, _) => ShowSettings(false);
+
         _sessions.Picked += (_, id) => OpenDeck(id);
+        _sessions.NewRequested += (_, _) => NewSession();
+        _sessions.SettingsRequested += (_, _) => ShowSettings(!_preferences.IsVisible);
         _decks.Changed += (_, e) => Dispatcher.UIThread.Post(
             () =>
             {
@@ -318,6 +339,77 @@ public sealed class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Puts the presentation away and starts again: an empty stage, an empty conversation, and
+    /// an agent with nothing behind it.
+    /// </summary>
+    /// <remarks>
+    /// No deck is made here. A session is a subject, and the subject arrives with the first
+    /// thing the user asks for; a row called "Untitled" that nobody ever filled in is litter.
+    /// </remarks>
+    private void NewSession()
+    {
+        _decks.Flush();
+        _narrator.Stop();
+        _decks.Close();
+        _asking = null;
+        _resumed = null;
+        _chat.Clear();
+        _chat.SetStatus(null);
+        _ = _agent?.ResetAsync(null);
+        ListSessions();
+        _chat.SetPlaceholder("What should I explain?");
+        _chat.FocusInput();
+        UpdateHud();
+        Log.Write("new session");
+    }
+
+    private void ShowSettings(bool show)
+    {
+        if (show)
+        {
+            _preferences.Show(_settings);
+        }
+        else
+        {
+            _preferences.IsVisible = false;
+            _stage.Focus();
+        }
+    }
+
+    /// <summary>
+    /// A setting the user changed in the panel, written to settings.yaml as one line.
+    /// </summary>
+    /// <remarks>
+    /// Through the file rather than into the live objects, so there is one path in: the
+    /// watcher applies it the same way it applies an edit made in a text editor, and what the
+    /// app is doing always matches what the file says.
+    /// </remarks>
+    private void ApplySetting(string key, string value)
+    {
+        if (SettingsFile.Write(_paths.SettingsFile, key, value) is { } error)
+        {
+            _preferences.Complain(error);
+            Log.Write($"settings: {error}");
+            return;
+        }
+
+        Log.Write($"settings: {key} = {value}");
+    }
+
+    /// <summary>Stops the turn in flight without losing the conversation.</summary>
+    private void StopAgent()
+    {
+        if (_agent is null)
+        {
+            return;
+        }
+
+        _chat.SetStatus("Stopping…");
+        _ = _agent.InterruptAsync().ContinueWith(
+            _ => Dispatcher.UIThread.Post(UpdateHud), TaskScheduler.Default);
+    }
+
     /// <summary>settings.yaml was saved: what can change now does, and the rest is reported.</summary>
     private void OnSettingsReloaded(SettingsLoad load)
     {
@@ -336,6 +428,11 @@ public sealed class MainWindow : Window
         foreach (var warning in load.Warnings ?? [])
         {
             _chat.AddMessage(fromUser: false, "settings.yaml: " + warning, isError: true);
+        }
+
+        if (_preferences.IsVisible)
+        {
+            _preferences.Show(_settings);
         }
 
         _chat.SetStatus(later.Count == 0
@@ -557,8 +654,12 @@ public sealed class MainWindow : Window
                 attached.Count > 0 ? null : $"claude mcp add intrf4ce -- \"{Environment.ProcessPath}\" --mcp");
         }
 
-        _transport.Update(_narrator.IsSpeaking, _narrator.Held, _narrator.State);
+        _transport.Update(
+            _narrator.IsSpeaking, _narrator.Held, _narrator.Continuous, _narrator.Muted, _narrator.SubtitlesOn, _narrator.State);
         _transport.IsVisible = deck is { Count: > 0 };
+        _nav.Update(_controller.CurrentIndex, deck?.Count ?? 0);
+        _nav.IsVisible = deck is { Count: > 1 };
+        _chat.SetBusy(_agent?.IsWorking == true);
 
         var busy = _agent?.Status is AgentStatus.Working or AgentStatus.Starting;
         _chat.Orb.Mood = _agent?.Status == AgentStatus.Failed ? OrbMood.Error
@@ -577,6 +678,18 @@ public sealed class MainWindow : Window
     {
         if (_chat.IsTyping)
         {
+            return;
+        }
+
+        // The settings panel is over everything, so it takes Escape before anything else does.
+        if (_preferences.IsVisible)
+        {
+            if (e.Key is Key.Escape or Key.OemComma)
+            {
+                ShowSettings(false);
+                e.Handled = true;
+            }
+
             return;
         }
 
@@ -669,6 +782,10 @@ public sealed class MainWindow : Window
                 _chat.FocusInput();
                 break;
 
+            case Key.Escape when _agent?.IsWorking == true:
+                StopAgent();
+                break;
+
             case Key.Escape when _chat.Collapsed:
                 _chat.Collapse(false);
                 break;
@@ -694,6 +811,19 @@ public sealed class MainWindow : Window
 
             case Key.S:
                 _narrator.ToggleSubtitles();
+                break;
+
+            // Keep going through the deck, or stop at the end of this slide.
+            case Key.C:
+                _narrator.SetContinuous(!_narrator.Continuous);
+                break;
+
+            case Key.N:
+                NewSession();
+                break;
+
+            case Key.OemComma:
+                ShowSettings(true);
                 break;
 
             default:

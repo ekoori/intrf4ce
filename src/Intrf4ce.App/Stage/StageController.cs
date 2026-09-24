@@ -595,6 +595,17 @@ public sealed class StageController : IStage
             case DeckChangeKind.DeckUpdated:
                 _deck = deck;
                 break;
+
+            case DeckChangeKind.Closed:
+                _stage.Clear();
+                _views.Clear();
+                _stage.Spotlight.Set([]);
+                _deck = null;
+                _current = -1;
+                _focus = null;
+                _overview = false;
+                CurrentChanged?.Invoke(this, new ShownSlide(null, false));
+                break;
         }
 
         Publish();

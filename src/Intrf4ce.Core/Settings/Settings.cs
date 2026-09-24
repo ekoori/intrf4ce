@@ -109,10 +109,22 @@ public sealed class AgentSettings
     /// <summary>Model for the hosted agent; empty for Claude Code's default.</summary>
     public string Model { get; set; } = "";
 
-    public string PermissionMode { get; set; } = "dontAsk";
+    /// <summary>
+    /// How the agent's permission questions are answered: <c>auto</c> sends them to intrf4ce,
+    /// which allows them and shows the tool call in the chat; <c>dontAsk</c> never asks.
+    /// </summary>
+    public string PermissionMode { get; set; } = "auto";
 
-    public List<string> AllowedTools { get; set; } =
-        ["mcp__intrf4ce", "WebSearch", "WebFetch", "Read", "Glob", "Grep"];
+    /// <summary>
+    /// The tools the agent may use; empty means everything the permission mode allows.
+    /// </summary>
+    /// <remarks>
+    /// Empty by default. A presenter that cannot read a file, search the web or run a command
+    /// spends its turn explaining what it could not do, which is worse than useless on a stage
+    /// someone is watching. Name tools here to narrow it — <c>[mcp__intrf4ce, WebSearch]</c>
+    /// makes a presenter that can only present.
+    /// </remarks>
+    public List<string> AllowedTools { get; set; } = [];
 
     /// <summary>Where the hosted agent runs; empty for intrf4ce's own agent folder.</summary>
     public string WorkingDirectory { get; set; } = "";
@@ -304,6 +316,148 @@ public static class SettingsFile
         return later;
     }
 
+    /// <summary>
+    /// Writes one setting into settings.yaml, leaving the rest of the file — comments, order,
+    /// spacing — exactly as the user left it.
+    /// </summary>
+    /// <remarks>
+    /// The file is edited as text rather than reserialised from the model, because
+    /// reserialising would throw away every comment in it, and those comments are how anyone
+    /// opening the file learns what the settings mean.
+    /// </remarks>
+    /// <returns>An error in words, or null when it was written.</returns>
+    public static string? Write(string path, string key, string value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var entry = SettingsSchema.Find(key);
+        if (entry is null)
+        {
+            return $"There is no setting '{key}'. There is: {string.Join(", ", SettingsSchema.All.Select(s => s.Key))}.";
+        }
+
+        var (written, error) = SettingsSchema.Parse(entry, value ?? "");
+        if (error is not null)
+        {
+            return error;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var text = File.Exists(path) ? File.ReadAllText(path) : DefaultText;
+            File.WriteAllText(path, Set(text, entry.Key, written!));
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"settings.yaml could not be written: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// The same edit on the text itself: the line keeps its indentation and its comment, and a
+    /// setting the file never mentioned is added under its section.
+    /// </summary>
+    public static string Set(string text, string key, string value)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(value);
+
+        var dot = key.IndexOf('.', StringComparison.Ordinal);
+        if (dot <= 0)
+        {
+            throw new ArgumentException("a setting key reads section.name", nameof(key));
+        }
+
+        var section = key[..dot];
+        var name = key[(dot + 1)..];
+        var written = Quote(value);
+        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
+
+        var start = lines.FindIndex(l => l.StartsWith(section + ":", StringComparison.Ordinal));
+        if (start < 0)
+        {
+            // A file that never mentioned this section: give it one at the end, above whatever
+            // blank line the file ends with, so the file still ends the way it did.
+            var at = lines.Count > 0 && lines[^1].Trim().Length == 0 ? lines.Count - 1 : lines.Count;
+            if (at > 0 && lines[at - 1].Trim().Length > 0)
+            {
+                lines.Insert(at++, "");
+            }
+
+            lines.Insert(at++, section + ":");
+            lines.Insert(at, $"  {name}: {written}");
+            return string.Join("\n", lines);
+        }
+
+        // The section runs until the next line that starts in column one.
+        var end = start + 1;
+        while (end < lines.Count && (lines[end].Trim().Length == 0 || char.IsWhiteSpace(lines[end][0])))
+        {
+            end++;
+        }
+
+        for (var i = start + 1; i < end; i++)
+        {
+            var line = lines[i];
+            var trimmed = line.TrimStart();
+            if (!trimmed.StartsWith(name + ":", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var indent = line[..(line.Length - trimmed.Length)];
+            var changed = $"{indent}{name}: {written}";
+            var comment = CommentStart(line);
+
+            // The explanation stays in the column it was in, so a file of them does not go ragged.
+            lines[i] = comment < 0
+                ? changed
+                : changed.PadRight(Math.Max(comment, changed.Length + 2)) + line[comment..].TrimEnd();
+
+            return string.Join("\n", lines);
+        }
+
+        // The section exists but has never said anything about this setting.
+        var last = end;
+        while (last > start + 1 && lines[last - 1].Trim().Length == 0)
+        {
+            last--;
+        }
+
+        lines.Insert(last, $"  {name}: {written}");
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>Where the explanation after a value starts, or -1 when there is none.</summary>
+    private static int CommentStart(string line)
+    {
+        var quoted = false;
+        for (var i = 0; i < line.Length; i++)
+        {
+            if (line[i] == '"')
+            {
+                quoted = !quoted;
+            }
+
+            // A hash inside the value itself is not a comment; one after a space is.
+            else if (line[i] == '#' && !quoted && i > 0 && char.IsWhiteSpace(line[i - 1]))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>Quotes a value only where YAML would otherwise read it as something else.</summary>
+    private static string Quote(string value) =>
+        value.Length == 0 || value.StartsWith(' ') || value.EndsWith(' ')
+            || value.Contains('#', StringComparison.Ordinal) || value.Contains(':', StringComparison.Ordinal)
+            ? "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\""
+            : value;
+
     /// <summary>The documented default file, as written on first run.</summary>
     public static string DefaultContent => DefaultText;
 
@@ -414,8 +568,11 @@ public static class SettingsFile
                                   # agent to API credit instead of its own signed-in account
           command: claude
           model: ""               # empty for Claude Code's default
-          permission_mode: dontAsk
-          allowed_tools: [mcp__intrf4ce, WebSearch, WebFetch, Read, Glob, Grep]
+          permission_mode: auto    # auto: intrf4ce answers the agent's permission questions and
+                                  # shows what it ran. dontAsk never asks. Also acceptEdits,
+                                  # bypassPermissions, plan, manual.
+          allowed_tools: []       # empty: every tool the permission mode allows. Narrow it with
+                                  # e.g. [mcp__intrf4ce, WebSearch] for a presenter that only presents
           working_directory: ""   # empty for intrf4ce's own agent folder
           strict_mcp: true        # only intrf4ce's tools, not every MCP server you have configured
           extra_args: []

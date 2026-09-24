@@ -38,6 +38,7 @@ public sealed class Narrator
     private IDisposable? _advance;
     private bool _waitingForNext;
     private bool _muted;
+    private string _advanceAsLoaded;
     private (string SlideId, string Narration)? _performed;
 
     public Narrator(
@@ -56,6 +57,8 @@ public sealed class Narrator
         _settings = settings;
         _audio.Volume = (float)settings.Volume;
         _subtitles.Enabled = settings.Subtitles;
+        _advanceAsLoaded = settings.Advance;
+        Continuous = string.Equals(settings.Advance, "auto", StringComparison.OrdinalIgnoreCase);
 
         _tick = new DispatcherTimer(TimeSpan.FromMilliseconds(30), DispatcherPriority.Render, (_, _) => Tick());
         _audio.Ended += (_, generation) => Dispatcher.UIThread.Post(() =>
@@ -79,6 +82,28 @@ public sealed class Narrator
         : "speaking";
 
     public bool IsSpeaking => _now is { Paused: false };
+
+    /// <summary>
+    /// Whether the presentation runs on through the deck by itself, or stops at the end of the
+    /// slide it is on.
+    /// </summary>
+    /// <remarks>
+    /// The tick beside the play button. It starts from <c>narration.advance</c> and follows
+    /// that setting when the file changes, but the tick wins in between: someone who wants one
+    /// answer read out and then quiet should not have to edit a file to get it.
+    /// </remarks>
+    public bool Continuous { get; private set; }
+
+    /// <summary>The voice is silenced; slides still change and subtitles still show.</summary>
+    public bool Muted => _muted;
+
+    public bool SubtitlesOn => _subtitles.Enabled;
+
+    /// <summary>
+    /// The last slide to play before stopping, for an agent that added three slides and wants
+    /// those three heard and nothing else.
+    /// </summary>
+    public string? StopAfter { get; set; }
 
     /// <summary>The user stopped the presentation: nothing speaks and no slide moves on by itself.</summary>
     /// <remarks>
@@ -140,13 +165,27 @@ public sealed class Narrator
     }
 
     /// <summary>The settings file changed: take the volume and subtitles from it now.</summary>
+    /// <remarks>
+    /// Subtitles and continuous play follow the file only when the file itself changed its
+    /// mind about them; otherwise a save of some unrelated setting would undo what the user
+    /// just pressed on the transport bar.
+    /// </remarks>
     public void SettingsChanged()
     {
         _audio.Volume = _muted ? 0 : (float)_settings.Volume;
+        _subtitles.Enabled = _settings.Subtitles;
         if (!_settings.Subtitles)
         {
             _subtitles.Hide();
         }
+
+        if (!string.Equals(_advanceAsLoaded, _settings.Advance, StringComparison.OrdinalIgnoreCase))
+        {
+            _advanceAsLoaded = _settings.Advance;
+            Continuous = string.Equals(_settings.Advance, "auto", StringComparison.OrdinalIgnoreCase);
+        }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Space: pause, resume, or play the slide again once it has finished.</summary>
@@ -176,19 +215,40 @@ public sealed class Narrator
         }
     }
 
-    public void Mute()
+    public void Mute() => SetMuted(!_muted);
+
+    public void SetMuted(bool muted)
     {
-        _muted = !_muted;
+        _muted = muted;
         _audio.Volume = _muted ? 0 : (float)_settings.Volume;
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public void ToggleSubtitles()
+    public void ToggleSubtitles() => SetSubtitles(!_subtitles.Enabled);
+
+    public void SetSubtitles(bool on)
     {
-        _subtitles.Enabled = !_subtitles.Enabled;
-        if (!_subtitles.Enabled)
+        _subtitles.Enabled = on;
+        if (!on)
         {
             _subtitles.Hide();
         }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Keep going through the deck when a slide's narration ends, or stop there.</summary>
+    public void SetContinuous(bool on)
+    {
+        Continuous = on;
+        if (!on)
+        {
+            _advance?.Dispose();
+            _advance = null;
+            _waitingForNext = false;
+        }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>The agent's <c>say</c>: spoken after whatever is being said now, not over it.</summary>
@@ -222,7 +282,7 @@ public sealed class Narrator
     /// <summary>A slide arrived; if the last one finished and was waiting for it, move on.</summary>
     public void SlidesChanged()
     {
-        if (!Held && _waitingForNext && _stage.Deck is { } deck && _stage.CurrentIndex < deck.Count - 1)
+        if (!Held && Continuous && _waitingForNext && _stage.Deck is { } deck && _stage.CurrentIndex < deck.Count - 1)
         {
             _waitingForNext = false;
             _stage.Next();
@@ -418,9 +478,22 @@ public sealed class Narrator
             return;
         }
 
+        if (now.Slide is not { } slide)
+        {
+            return;
+        }
+
+        // The end of what the agent asked to be played: stop here rather than reading on into
+        // slides that answer a question nobody asked twice.
+        if (StopAfter == slide.Id)
+        {
+            StopAfter = null;
+            return;
+        }
+
         // A quiz waits for its answer unless the agent said otherwise.
-        if (!Held && now.Slide is { } slide
-            && (slide.Advance ?? (slide.Elements.Any(e => e is QuizElement) ? "manual" : _settings.Advance)) == "auto")
+        if (!Held && Continuous
+            && (slide.Advance ?? (slide.Elements.Any(e => e is QuizElement) ? "manual" : "auto")) == "auto")
         {
             _advance?.Dispose();
             _advance = DispatcherTimer.RunOnce(() => AdvanceFrom(slide), TimeSpan.FromSeconds(Math.Max(0, _settings.PauseAfter)));

@@ -69,6 +69,7 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
     private Process? _process;
     private StreamWriter? _stdin;
     private int _restarts;
+    private int _controls;
 
     public ClaudeCodeHost(HostedAgentOptions options, Action<string> log)
     {
@@ -167,6 +168,50 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
         Start(session);
     }
 
+    /// <summary>Whether there is a turn in flight to stop.</summary>
+    public bool IsWorking => (Status is AgentStatus.Working or AgentStatus.Starting) && IsRunning;
+
+    /// <summary>
+    /// Stops the turn in flight, leaving the conversation intact.
+    /// </summary>
+    /// <remarks>
+    /// Claude Code takes an interrupt as a control request on the same stream the messages go
+    /// down, which is how its own SDK does it: the turn ends, the session keeps everything
+    /// said so far, and the next message carries on from there. A process that does not answer
+    /// within a few seconds is restarted onto the same session instead, because a stop button
+    /// that leaves the agent talking is worse than no stop button.
+    /// </remarks>
+    public async Task InterruptAsync()
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        var request = new JsonObject
+        {
+            ["type"] = "control_request",
+            ["request_id"] = $"intrf4ce-{Interlocked.Increment(ref _controls)}",
+            ["request"] = new JsonObject { ["subtype"] = "interrupt" },
+        };
+
+        if (!TryWrite(request))
+        {
+            return;
+        }
+
+        _log("asked the hosted agent to stop");
+
+        await Task.Delay(TimeSpan.FromSeconds(6)).ConfigureAwait(false);
+        if (Status is AgentStatus.Working)
+        {
+            _log("the hosted agent did not stop; restarting it on the same session");
+            var session = SessionId;
+            await StopAsync().ConfigureAwait(false);
+            Start(session);
+        }
+    }
+
     /// <summary>Sends a user message, starting the agent first if it is not running.</summary>
     public void Send(string text)
     {
@@ -175,6 +220,21 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             Start(SessionId);
         }
 
+        var message = new JsonObject
+        {
+            ["type"] = "user",
+            ["message"] = new JsonObject { ["role"] = "user", ["content"] = text },
+        };
+
+        if (TryWrite(message))
+        {
+            SetStatus(AgentStatus.Working);
+        }
+    }
+
+    /// <summary>One line of JSON down the agent's stdin; false when it has stopped listening.</summary>
+    private bool TryWrite(JsonObject message)
+    {
         StreamWriter? stdin;
         lock (_gate)
         {
@@ -183,14 +243,8 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
 
         if (stdin is null)
         {
-            return;
+            return false;
         }
-
-        var message = new JsonObject
-        {
-            ["type"] = "user",
-            ["message"] = new JsonObject { ["role"] = "user", ["content"] = text },
-        };
 
         try
         {
@@ -199,12 +253,13 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
                 stdin.WriteLine(message.ToJsonString());
             }
 
-            SetStatus(AgentStatus.Working);
+            return true;
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
             LastError = "The agent stopped accepting messages: " + ex.Message;
             Activity?.Invoke(this, new AgentActivity(AgentActivityKind.Error, LastError));
+            return false;
         }
     }
 
@@ -457,6 +512,13 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
 
                 break;
 
+            case "control_request":
+                OnControlRequest(message);
+                break;
+
+            case "control_response":
+                break;
+
             case "result":
                 Cost = message["total_cost_usd"]?.GetValue<double>() ?? Cost;
                 SessionId = message["session_id"]?.GetValue<string>() ?? SessionId;
@@ -472,6 +534,61 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
                 break;
         }
     }
+
+    /// <summary>
+    /// Something the agent asks intrf4ce for mid-turn. Today that is permission to use a tool.
+    /// </summary>
+    /// <remarks>
+    /// intrf4ce answers rather than leaving the turn hanging on a prompt nobody can see: the
+    /// user chose the permission mode when they set the app up, the tool call itself is
+    /// reported in the chat as it happens, and the stop button is there for an answer going the
+    /// wrong way. Anything else is refused in words, because a control request left unanswered
+    /// stops the agent for ever.
+    /// </remarks>
+    private void OnControlRequest(JsonObject message)
+    {
+        var request = message["request"];
+        var subtype = request?["subtype"]?.GetValue<string>() ?? "something";
+
+        if (subtype == "can_use_tool")
+        {
+            _log("allowing " + (request?["tool_name"]?.GetValue<string>() ?? "a tool"));
+            Answer(message["request_id"], new JsonObject
+            {
+                ["behavior"] = "allow",
+                ["updatedInput"] = request?["input"]?.DeepClone() ?? new JsonObject(),
+            });
+
+            return;
+        }
+
+        _log($"hosted agent asked intrf4ce for {subtype}, which it cannot do");
+        Refuse(message["request_id"], $"intrf4ce does not handle '{subtype}'");
+    }
+
+    private void Answer(JsonNode? requestId, JsonObject response) =>
+        TryWrite(new JsonObject
+        {
+            ["type"] = "control_response",
+            ["response"] = new JsonObject
+            {
+                ["subtype"] = "success",
+                ["request_id"] = requestId?.DeepClone(),
+                ["response"] = response,
+            },
+        });
+
+    private void Refuse(JsonNode? requestId, string why) =>
+        TryWrite(new JsonObject
+        {
+            ["type"] = "control_response",
+            ["response"] = new JsonObject
+            {
+                ["subtype"] = "error",
+                ["request_id"] = requestId?.DeepClone(),
+                ["error"] = why,
+            },
+        });
 
     private void ReportMcpFailure(JsonObject init)
     {
@@ -505,6 +622,9 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             "WebFetch" => $"Reading {Host(Arg("url"))}",
             "Read" => $"Reading {Path.GetFileName(Arg("file_path") ?? "a file")}",
             "Glob" or "Grep" => "Looking through files",
+            "Bash" => "Running " + Short(Arg("command") ?? "a command"),
+            "Task" => "Asking a helper to " + Short(Arg("description") ?? "look into something"),
+            "TodoWrite" => "Planning",
             "put_slide" => $"Building slide “{input?["slide"]?["title"]?.GetValue<string>() ?? input?["slide"]?["id"]?.GetValue<string>() ?? "…"}”",
             "update_slide" => $"Updating slide {Arg("id")}",
             "new_deck" => $"Starting “{Arg("title")}”",
@@ -516,6 +636,10 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             _ => shortName.Replace('_', ' '),
         };
     }
+
+    /// <summary>A command line short enough for a status line.</summary>
+    private static string Short(string text) =>
+        text.Length <= 48 ? text : text[..47].TrimEnd() + "…";
 
     private static string Host(string? url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "a page";

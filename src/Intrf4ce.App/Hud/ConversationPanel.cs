@@ -34,6 +34,7 @@ public sealed class ConversationPanel : Border
     private readonly Border _context;
     private readonly TextBlock _contextText;
     private readonly TextBlock _hint;
+    private readonly IconButton _stop;
     private readonly DockPanel _header;
     private readonly Border _box;
     private string _placeholder = "Ask for anything to be explained…";
@@ -68,11 +69,22 @@ public sealed class ConversationPanel : Border
             Margin = new Thickness(8, 0, 0, 0),
         };
 
+        // Only while the agent is working: a way out of an answer that is going the wrong way,
+        // without closing the app or waiting for it to finish.
+        _stop = new IconButton(theme, Glyph.StopSquare, "Stop the agent (Esc)", () => StopRequested?.Invoke(this, EventArgs.Empty), size: 30)
+        {
+            IsVisible = false,
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
         _header = new DockPanel { Margin = new Thickness(18, 16, 18, 12) };
         DockPanel.SetDock(Orb, Dock.Left);
         DockPanel.SetDock(_hint, Dock.Right);
+        DockPanel.SetDock(_stop, Dock.Right);
         _header.Children.Add(Orb);
         _header.Children.Add(_hint);
+        _header.Children.Add(_stop);
         _header.Children.Add(_status);
 
         // ---- the messages
@@ -236,7 +248,8 @@ public sealed class ConversationPanel : Border
         _scroller.IsVisible = !collapsed;
         _box.IsVisible = !collapsed;
         _status.IsVisible = !collapsed;
-        _hint.IsVisible = !collapsed;
+        _hint.IsVisible = !collapsed && !_stop.IsVisible;
+        _stop.IsVisible = _stop.IsVisible && !collapsed;
         _context.IsVisible = _context.IsVisible && !collapsed;
         _header.Margin = collapsed ? new Thickness(0, 16, 0, 12) : new Thickness(18, 16, 18, 12);
         Orb.Margin = collapsed ? new Thickness(0) : new Thickness(0, 0, 10, 0);
@@ -264,7 +277,20 @@ public sealed class ConversationPanel : Border
     /// <summary>The question stopped being about something on the stage.</summary>
     public event EventHandler? ContextCleared;
 
+    /// <summary>Stop whatever the agent is doing now.</summary>
+    public event EventHandler? StopRequested;
+
     public bool IsTyping => _input.IsFocused;
+
+    /// <summary>Whether the stop button is showing, which is also whether there is anything to stop.</summary>
+    public bool CanStop => _stop.IsVisible;
+
+    /// <summary>The agent is working (or is not), which decides whether stopping is offered.</summary>
+    public void SetBusy(bool busy)
+    {
+        _stop.IsVisible = busy && !Collapsed;
+        _hint.IsVisible = !busy && !Collapsed;
+    }
 
     public bool HasContext => _context.IsVisible;
 
@@ -313,6 +339,14 @@ public sealed class ConversationPanel : Border
         {
             _input.PlaceholderText = text;
         }
+    }
+
+    /// <summary>Empties the transcript, for a session that has nothing behind it.</summary>
+    public void Clear()
+    {
+        _messages.Children.Clear();
+        _messages.Children.Add(_empty);
+        ClearContext();
     }
 
     public void AddMessage(bool fromUser, string text, bool isError = false)
