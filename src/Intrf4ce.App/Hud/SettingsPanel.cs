@@ -315,8 +315,18 @@ public sealed class SettingsPanel : Border
             TickFrequency = entry.Step,
             IsSnapToTickEnabled = true,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = _skin.Brush(_skin.Accent),
         };
+
+        // Fluent draws a slider in its own accent, which here is a magenta nobody asked for.
+        foreach (var key in new[] { "SliderTrackValueFill", "SliderTrackValueFillPointerOver", "SliderTrackValueFillPressed", "SliderThumbBackground", "SliderThumbBackgroundPointerOver", "SliderThumbBackgroundPressed" })
+        {
+            slider.Resources[key] = _skin.Brush(_skin.Accent);
+        }
+
+        foreach (var key in new[] { "SliderTrackFill", "SliderTrackFillPointerOver", "SliderTrackFillPressed" })
+        {
+            slider.Resources[key] = _skin.Brush(_skin.Line);
+        }
 
         var settling = false;
         slider.PropertyChanged += (_, e) =>

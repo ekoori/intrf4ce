@@ -35,6 +35,8 @@ public sealed class StageView : Panel
     private Point? _pressed;
     private CameraView _pressedView;
     private bool _dragging;
+    private TimeSpan? _lastPress;
+    private Point _lastPressAt;
 
     public StageView(Skin skin)
     {
@@ -63,6 +65,16 @@ public sealed class StageView : Panel
 
     /// <summary>A click that was not a drag, at this point in the world.</summary>
     public event EventHandler<Point>? Clicked;
+
+    /// <summary>
+    /// Two clicks in the same place in quick succession, at this point in the world.
+    /// </summary>
+    /// <remarks>
+    /// Timed here rather than taken from Avalonia's tapped gestures, which never arrive: the
+    /// stage captures the pointer on press so that a drag pans the camera, and a captured
+    /// pointer is not a tap.
+    /// </remarks>
+    public event EventHandler<Point>? DoubleClicked;
 
     /// <summary>The user moved the camera by hand (wheel or drag).</summary>
     public event EventHandler? MovedByHand;
@@ -179,11 +191,30 @@ public sealed class StageView : Panel
             return;
         }
 
-        _pressed = e.GetPosition(this);
+        var point = e.GetPosition(this);
+        var now = _clock.Elapsed;
+        var again = _lastPress is { } last && (now - last).TotalMilliseconds < 450 && Distance(point, _lastPressAt) < 8;
+
+        // A third click starts over rather than counting as another double.
+        _lastPress = again ? null : now;
+        _lastPressAt = point;
+
+        if (again)
+        {
+            // Not the start of a drag: the first click already settled where the camera is.
+            _pressed = null;
+            DoubleClicked?.Invoke(this, ScreenToWorld(point));
+            e.Handled = true;
+            return;
+        }
+
+        _pressed = point;
         _pressedView = _view;
         _dragging = false;
         e.Pointer.Capture(this);
     }
+
+    private static double Distance(Point a, Point b) => new Vector(a.X - b.X, a.Y - b.Y).Length;
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {

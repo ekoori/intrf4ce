@@ -43,7 +43,9 @@ public sealed class MapView : ElementView
     public MapView(ElementContext context, MapElement element)
         : base(context, element)
     {
-        _tiles = new TileLayer(_loaded, Skin);
+        // Clipped: a tile is a fixed square and the row at each edge hangs over the map's
+        // bounds, which without this paints over the caption underneath it.
+        _tiles = new TileLayer(_loaded, Skin) { ClipToBounds = true };
 
         _credit = new Border
         {

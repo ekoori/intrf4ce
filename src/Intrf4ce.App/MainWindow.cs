@@ -283,9 +283,9 @@ public sealed class MainWindow : Window
 
         // A double-click on a picture gives it the whole window; anywhere else it is the old
         // "put the slide back the way it was".
-        _stage.DoubleTapped += (_, e) =>
+        _stage.DoubleClicked += (_, world) =>
         {
-            if (_controller.ImageAt(_stage.ScreenToWorld(e.GetPosition(_stage))) is { } picture)
+            if (_controller.ImageAt(world) is { } picture)
             {
                 _inspector.Show(picture);
             }
@@ -560,6 +560,10 @@ public sealed class MainWindow : Window
         {
             _asking = null;
             _chat.ClearContext();
+
+            // Kept with the presentation as it reads in the panel: a question about a callout
+            // is as much part of the conversation as anything typed on its own.
+            Remember(fromUser: true, $"About {subject.Label}: {text}");
             PublishFromStage("ask", text, Meta(subject));
             return;
         }
