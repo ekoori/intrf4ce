@@ -72,6 +72,12 @@ public sealed class StageController : IStage
     /// <summary>Filled in by whoever owns narration and the agent, for <c>get_state</c>.</summary>
     public Func<string> Playback { get; set; } = () => "idle";
 
+    /// <summary>
+    /// Works the transport on the agent's behalf; supplied by the window, which owns the
+    /// narrator. Returns what the performance is doing afterwards.
+    /// </summary>
+    public Func<PlaybackRequest, string> Perform { get; set; } = _ => "there is no narrator";
+
     public Func<string> Voice { get; set; } = () => "none";
 
     public Func<string> Agent { get; set; } = () => "none";
@@ -419,6 +425,9 @@ public sealed class StageController : IStage
 
     public Task<string?> FocusAsync(string? target, double[]? region, CancellationToken cancellationToken) =>
         Dispatcher.UIThread.InvokeAsync(() => Focus(target, region)).GetTask();
+
+    public Task<string> PlaybackAsync(PlaybackRequest request, CancellationToken cancellationToken) =>
+        Dispatcher.UIThread.InvokeAsync(() => Perform(request)).GetTask();
 
     public Task SayAsync(string text, CancellationToken cancellationToken)
     {

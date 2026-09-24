@@ -29,6 +29,10 @@ public sealed record Slide
         Elements.FirstOrDefault(e => string.Equals(e.Id, elementId, StringComparison.Ordinal));
 }
 
+/// <summary>One turn of the conversation that built a presentation.</summary>
+/// <param name="Who">user or agent.</param>
+public sealed record ChatLine(string Who, string Text, DateTimeOffset At);
+
 /// <summary>A presentation: an ordered list of slides and where their files live.</summary>
 public sealed record Deck
 {
@@ -47,6 +51,27 @@ public sealed record Deck
 
     /// <summary>The hosted agent's conversation, resumed when the deck is reopened.</summary>
     public string? AgentSession { get; init; }
+
+    /// <summary>
+    /// What was said while this presentation was built, kept with it.
+    /// </summary>
+    /// <remarks>
+    /// A presentation is the answer to a conversation, and reopening it without the questions
+    /// leaves the user reading someone else's slides. The agent's own memory of the session is
+    /// its Claude Code conversation, resumed through <see cref="AgentSession"/>; this is the
+    /// part a person can read, and what is shown again when the session is reopened.
+    /// </remarks>
+    public ImmutableList<ChatLine> Chat { get; init; } = [];
+
+    /// <summary>
+    /// Slides that have already been performed to the user.
+    /// </summary>
+    /// <remarks>
+    /// So that an answer to a new question plays the slides that answer it and not the six
+    /// before them, which the user has already sat through.
+    /// </remarks>
+    public ImmutableHashSet<string> Spoken { get; init; } =
+        ImmutableHashSet<string>.Empty.WithComparer(StringComparer.Ordinal);
 
     public ImmutableList<Slide> Slides { get; init; } = [];
 
@@ -74,4 +99,6 @@ public sealed record Deck
 }
 
 /// <summary>What the library lists without loading every deck.</summary>
-public sealed record DeckInfo(string Id, string Title, int Slides, DateTimeOffset Modified, string Folder);
+/// <param name="Subject">The first slide's title: what the presentation is about, in its own words.</param>
+public sealed record DeckInfo(
+    string Id, string Title, int Slides, DateTimeOffset Modified, string Folder, string? Subject = null);

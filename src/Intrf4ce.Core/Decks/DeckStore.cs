@@ -98,7 +98,7 @@ public sealed class DeckStore
             try
             {
                 var deck = Read(file);
-                decks.Add(new DeckInfo(deck.Id, deck.Title, deck.Count, deck.Modified, folder));
+                decks.Add(new DeckInfo(deck.Id, deck.Title, deck.Count, deck.Modified, folder, deck.Slides.FirstOrDefault()?.Title));
             }
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
             {

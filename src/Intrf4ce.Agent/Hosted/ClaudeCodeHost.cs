@@ -368,7 +368,7 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
 
         // Load intrf4ce's tools up front. Claude Code otherwise defers MCP tool schemas and the
         // first thing every session does is a tool search, a round trip before any slide
-        // appears; with only intrf4ce's sixteen tools there is nothing to save by deferring.
+        // appears; with one small server there is nothing to save by deferring.
         start.Environment["ENABLE_TOOL_SEARCH"] = "false";
 
         // An API key left in the environment for something else would bill the presentation to
@@ -632,6 +632,9 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             "scan_media" => "Looking through photos",
             "snapshot" => "Checking the stage",
             "wait_for_user" => "Listening",
+            "set_playback" => "",
+            "describe_deck" => "Looking at another session",
+            "get_settings" or "set_setting" => "Checking the settings",
             "reply" or "say" or "get_state" or "go_to" or "focus" => "",
             _ => shortName.Replace('_', ' '),
         };

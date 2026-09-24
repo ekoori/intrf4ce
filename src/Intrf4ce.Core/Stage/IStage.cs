@@ -28,6 +28,20 @@ public sealed record SlideReport(
     IReadOnlyDictionary<string, IReadOnlyList<string>> Parts);
 
 /// <summary>
+/// A change to the performance, as the transport bar would make it; every part is optional.
+/// </summary>
+/// <param name="Action">play, pause or stop.</param>
+/// <param name="From">A slide to show and perform from.</param>
+/// <param name="Through">The last slide to perform before stopping.</param>
+public sealed record PlaybackRequest(
+    string? Action = null,
+    string? From = null,
+    string? Through = null,
+    bool? Continuous = null,
+    bool? Muted = null,
+    bool? Subtitles = null);
+
+/// <summary>
 /// The parts of the app only the window can do, as the agent's tools see them.
 /// </summary>
 /// <remarks>
@@ -54,4 +68,7 @@ public interface IStage
 
     /// <summary>A PNG of the stage as the user sees it, or of one slide rendered on its own.</summary>
     Task<byte[]> SnapshotAsync(string? slideId, int width, CancellationToken cancellationToken);
+
+    /// <summary>Works the controls the user has; returns what the performance is doing now.</summary>
+    Task<string> PlaybackAsync(PlaybackRequest request, CancellationToken cancellationToken);
 }

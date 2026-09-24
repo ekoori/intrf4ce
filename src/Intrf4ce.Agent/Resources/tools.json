@@ -95,13 +95,13 @@
   "tools": [
     {
       "name": "get_state",
-      "description": "What the user is looking at and what is in the deck: slides with their ids, titles and readiness, the current slide, playback, focus, voice budget, and whether the user has caught up with the newest slide.",
+      "description": "What the user is looking at and what is in the deck: slides with their ids and titles, which of them have already been played, the current slide, what is focused on it, playback, voice budget, and whether the user has caught up with the newest slide.",
       "inputSchema": { "type": "object", "properties": {} },
       "annotations": { "readOnlyHint": true }
     },
     {
       "name": "list_decks",
-      "description": "Saved decks, newest first.",
+      "description": "Saved presentations, newest first, with what each is about. Every one is a session you can reopen: describe_deck looks inside one, open_deck puts it back on the stage.",
       "inputSchema": { "type": "object", "properties": {} },
       "annotations": { "readOnlyHint": true }
     },
@@ -224,6 +224,49 @@
         "properties": {
           "timeout_seconds": { "type": "number", "description": "Default 60, at most 600." }
         }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "set_playback",
+      "description": "Work the controls the user has: play, pause or stop the performance, silence the voice, show or hide subtitles, and decide whether it runs on through the deck. After adding slides that answer a new question, play from the first of them through the last, so the user hears the answer and not the six slides they already sat through.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "playback": { "type": "string", "enum": ["play", "pause", "stop"], "description": "play resumes or starts the slide on screen; stop silences everything until the user presses play." },
+          "from": { "type": "string", "description": "A slide id: show it and perform from there." },
+          "through": { "type": "string", "description": "A slide id: stop when its narration ends, instead of running on." },
+          "continuous": { "type": "boolean", "description": "Move on by itself when a slide's narration ends." },
+          "muted": { "type": "boolean", "description": "Silence the voice; slides and subtitles carry on." },
+          "subtitles": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "get_settings",
+      "description": "The user's settings: the voice, subtitles, pacing and the rest, with what each may be set to. Read before changing one, and to answer questions about how the app is set up.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "set_setting",
+      "description": "Change one of the user's settings, the same way the settings panel does. Only when they ask for it: these are the user's preferences, not yours, and the file they live in is theirs.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string", "description": "As get_settings lists it, e.g. narration.subtitles." },
+          "value": { "type": "string", "description": "true, false, a number, or one of the values get_settings gives." }
+        }
+      }
+    },
+    {
+      "name": "describe_deck",
+      "description": "Look inside another saved presentation without opening it or disturbing the one on the stage: its slides, and the conversation that built it. For when the user refers to something you did in an earlier session.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "description": "From list_decks." } }
       },
       "annotations": { "readOnlyHint": true }
     },

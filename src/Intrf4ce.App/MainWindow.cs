@@ -15,7 +15,9 @@ using Intrf4ce.App.Stage.Elements;
 using Intrf4ce.Core;
 using Intrf4ce.Core.Decks;
 using Intrf4ce.Core.Events;
+using Intrf4ce.Core.Model;
 using Intrf4ce.Core.Settings;
+using Intrf4ce.Core.Stage;
 using Intrf4ce.Media.Audio;
 using Intrf4ce.Media.Images;
 using Intrf4ce.Media.Tts;
@@ -57,6 +59,7 @@ public sealed class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly SettingsWatcher? _watcher;
     private readonly WelcomePanel _welcome;
+    private readonly List<(bool FromUser, string Text)> _saidBeforeThereWasADeck = [];
     private AskSubject? _asking;
     private string? _resumed;
     private string? _said;
@@ -107,7 +110,7 @@ public sealed class MainWindow : Window
 
         _fetcher = fetcher;
         var media = new MediaTools(fetcher, Path.Combine(paths.Cache, "inspect"));
-        var tools = new PresenterTools(_decks, _controller, _events, media);
+        var tools = new PresenterTools(_decks, _controller, _events, media, new SettingsAccess(settings, paths.SettingsFile));
         var catalog = ToolCatalog.Load();
         _server = new McpServer(PipeName.ForCurrentUser(), catalog, tools, Log.Write);
 
@@ -178,7 +181,11 @@ public sealed class MainWindow : Window
 
         // ---- wiring
         _controller.Changed += (_, _) => UpdateHud();
-        _controller.AgentReplied += (_, text) => _chat.AddMessage(fromUser: false, text);
+        _controller.AgentReplied += (_, text) =>
+        {
+            _chat.AddMessage(fromUser: false, text);
+            Remember(fromUser: false, text);
+        };
         _controller.Playback = () => _narrator.State;
         _controller.Voice = _voices.Describe;
         _controller.Agent = DescribeAgent;
@@ -186,8 +193,10 @@ public sealed class MainWindow : Window
         _controller.CurrentUpdated += (_, slide) => _narrator.SlideUpdated(slide);
         _controller.SlidesChanged += (_, _) => _narrator.SlidesChanged();
         _controller.SayRequested += (_, text) => _narrator.Say(text);
+        _controller.Perform = ApplyPlayback;
 
         _narrator.StateChanged += (_, _) => UpdateHud();
+        _narrator.SlideSpoken += (_, id) => _decks.MarkSpoken(id);
         _voices.Notice += (_, notice) => Dispatcher.UIThread.Post(() =>
         {
             Log.Write("voice: " + notice);
@@ -233,6 +242,7 @@ public sealed class MainWindow : Window
                 {
                     // Something is on the stage now; that is what the window is for.
                     _sessions.Collapse(true);
+                    AdoptWhatWasSaidFirst(e.Deck);
                 }
             },
             DispatcherPriority.Background);
@@ -319,6 +329,16 @@ public sealed class MainWindow : Window
             var deck = _decks.Open(id);
             _sessions.Collapse(true);
             _stage.Focus();
+
+            // The questions that produced these slides, so the user is not reading a stranger's
+            // presentation, and can see where they had got to.
+            _chat.Clear();
+            foreach (var line in deck.Chat)
+            {
+                _chat.AddMessage(line.Who == "user", line.Text, isError: false, line.At);
+            }
+
+            _chat.AddNote($"reopened · {DateTime.Now:HH:mm}");
             if (_agent is not null && deck.AgentSession is { Length: > 0 } session)
             {
                 _ = _agent.SwitchToAsync(session);
@@ -329,7 +349,9 @@ public sealed class MainWindow : Window
             // costs the user whether or not it was wanted.
             var slides = string.Join(", ", deck.Slides.Take(12).Select(s => s.Id));
             _resumed = $"<intrf4ce-resumed deck=\"{deck.Id}\" slides=\"{deck.Count}\">The user reopened \"{deck.Title}\""
-                + $" ({slides}). Call get_state to see it as it stands; any of it can be changed."
+                + $" ({slides}). This is the presentation built in this conversation; call get_state to see it as"
+                + " it stands, including which slides they have already heard. Answer what they ask next by adding"
+                + " slides at the end, and play only those."
                 + "</intrf4ce-resumed>\n";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
@@ -354,6 +376,7 @@ public sealed class MainWindow : Window
         _decks.Close();
         _asking = null;
         _resumed = null;
+        _saidBeforeThereWasADeck.Clear();
         _chat.Clear();
         _chat.SetStatus(null);
         _ = _agent?.ResetAsync(null);
@@ -395,6 +418,58 @@ public sealed class MainWindow : Window
         }
 
         Log.Write($"settings: {key} = {value}");
+    }
+
+    /// <summary>
+    /// The agent working the transport: the same controls the user has, for an agent that has
+    /// just built three slides and wants those three heard.
+    /// </summary>
+    private string ApplyPlayback(PlaybackRequest request)
+    {
+        if (request.Continuous is { } continuous)
+        {
+            _narrator.SetContinuous(continuous);
+        }
+
+        if (request.Muted is { } muted)
+        {
+            _narrator.SetMuted(muted);
+        }
+
+        if (request.Subtitles is { } subtitles)
+        {
+            _narrator.SetSubtitles(subtitles);
+        }
+
+        // Set before the slide is shown: showing it starts its narration, and the end of that
+        // narration is where "through" has to have taken effect.
+        if (request.Through is { } through)
+        {
+            _narrator.StopAfter = through;
+            _narrator.SetContinuous(request.Continuous ?? true);
+        }
+
+        if (request.From is { } from && _controller.Deck?.IndexOf(from) is { } index and >= 0)
+        {
+            _narrator.Perform("play", null);
+            _controller.Show(index, play: request.Action != "pause");
+        }
+        else if (request.Action is { } action)
+        {
+            _narrator.Perform(action, _controller.CurrentSlide);
+        }
+
+        UpdateHud();
+
+        var where = _controller.Deck is { } deck && _controller.CurrentIndex >= 0
+            ? $" on slide {_controller.CurrentIndex + 1} of {deck.Count}"
+            : "";
+
+        return _narrator.State + where
+            + (_narrator.Continuous ? ", running on through the deck" : ", stopping at the end of this slide")
+            + (_narrator.Muted ? ", voice silenced" : "")
+            + (_narrator.SubtitlesOn ? "" : ", subtitles off")
+            + (_narrator.StopAfter is { } last ? $", until {last}" : "");
     }
 
     /// <summary>Stops the turn in flight without losing the conversation.</summary>
@@ -469,24 +544,100 @@ public sealed class MainWindow : Window
             return;
         }
 
-        var meta = new Dictionary<string, string>();
-        if (_controller.Deck is { } deck && _controller.CurrentIndex >= 0)
-        {
-            meta["deck"] = deck.Id;
-            meta["slide"] = deck.Slides[_controller.CurrentIndex].Id;
-        }
+        Remember(fromUser: true, text);
 
-        // Plain chat goes to the agent as the user typed it; the context rides along only
-        // where there is a channel for it, so the hosted agent's messages read naturally.
-        _events.Publish("chat", Resumption() + text, _agent?.IsRunning == true ? null : meta);
+        // Plain chat reads as the user typed it, with where they are on one line after it, so
+        // "what about this one?" has something to mean.
+        _events.Publish("chat", Resumption() + text + ContextTag(Situation()), null);
         ShowSent();
     }
 
     /// <summary>Something the user did on the stage (a quiz answer, a question about a part), for the agent.</summary>
     private void PublishFromStage(string type, string text, IReadOnlyDictionary<string, string> meta)
     {
-        _events.Publish(type, Resumption() + text, meta);
+        var all = Situation();
+        foreach (var (key, value) in meta)
+        {
+            all[key] = value;
+        }
+
+        _events.Publish(type, Resumption() + text, all);
         ShowSent();
+    }
+
+    /// <summary>
+    /// Where the user is and what they are looking at: the context a question is asked in.
+    /// </summary>
+    /// <remarks>
+    /// Without it "how deep is that?" reaches the agent as four words with nothing attached,
+    /// and it answers about whatever it happens to remember building last rather than what is
+    /// on the screen. <c>unplayed</c> is the part that keeps an answer from being read over
+    /// the top of slides the user has already sat through.
+    /// </remarks>
+    private Dictionary<string, string> Situation()
+    {
+        var meta = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (_controller.Deck is not { } deck)
+        {
+            return meta;
+        }
+
+        meta["deck"] = deck.Id;
+        if (_controller.CurrentIndex >= 0 && _controller.CurrentIndex < deck.Count)
+        {
+            meta["slide"] = deck.Slides[_controller.CurrentIndex].Id;
+            meta["at"] = $"{_controller.CurrentIndex + 1} of {deck.Count}";
+        }
+
+        if (_controller.State.Focus is { Length: > 0 } focus)
+        {
+            meta["focus"] = focus;
+        }
+
+        if (_decks.Unspoken() is { Count: > 0 } unplayed)
+        {
+            meta["unplayed"] = string.Join(",", unplayed.Take(12));
+        }
+
+        meta["playback"] = _narrator.State;
+        return meta;
+    }
+
+    private static string ContextTag(IReadOnlyDictionary<string, string> meta) =>
+        meta.Count == 0
+            ? ""
+            : "\n<intrf4ce-context " + string.Join(' ', meta.Select(m => $"{m.Key}=\"{m.Value}\"")) + "/>";
+
+    /// <summary>Keeps a line of the conversation with the presentation it produced.</summary>
+    private void Remember(bool fromUser, string text)
+    {
+        if (_decks.Current is null)
+        {
+            // Said before the agent had decided what the subject was; kept for the deck it makes.
+            _saidBeforeThereWasADeck.Add((fromUser, text));
+            return;
+        }
+
+        _decks.AddChat(fromUser, text);
+    }
+
+    /// <summary>The first question belongs to the presentation that answers it.</summary>
+    private void AdoptWhatWasSaidFirst(Deck deck)
+    {
+        if (_saidBeforeThereWasADeck.Count == 0)
+        {
+            return;
+        }
+
+        if (deck.Chat.IsEmpty)
+        {
+            foreach (var (fromUser, text) in _saidBeforeThereWasADeck)
+            {
+                _decks.AddChat(fromUser, text);
+            }
+        }
+
+        _saidBeforeThereWasADeck.Clear();
     }
 
     /// <summary>The note about a reopened session, once, in front of whatever the user says next.</summary>
@@ -561,6 +712,7 @@ public sealed class MainWindow : Window
             case AgentActivityKind.Said:
                 _said = activity.Text;
                 _chat.AddMessage(fromUser: false, activity.Text);
+                Remember(fromUser: false, activity.Text);
                 break;
 
             case AgentActivityKind.Tool when activity.Text.Length > 0:

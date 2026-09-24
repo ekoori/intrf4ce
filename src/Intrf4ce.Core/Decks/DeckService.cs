@@ -49,6 +49,9 @@ public sealed class DeckService : IDisposable
 {
     private static readonly TimeSpan SaveDelay = TimeSpan.FromMilliseconds(400);
 
+    /// <summary>Lines of conversation kept with a presentation.</summary>
+    private const int MaxChat = 200;
+
     private readonly DeckStore _store;
     private readonly Func<DateTimeOffset> _now;
     private readonly object _gate = new();
@@ -242,6 +245,42 @@ public sealed class DeckService : IDisposable
         UpdateDeck(d => d with { AgentSession = sessionId });
         return true;
     }
+
+    /// <summary>
+    /// Keeps a line of the conversation with the presentation it is about.
+    /// </summary>
+    /// <remarks>
+    /// Silently nothing when no deck is open: the user may chat before there is anything to
+    /// chat about, and the agent decides what the subject is by making a deck for it.
+    /// </remarks>
+    public void AddChat(bool fromUser, string text)
+    {
+        if (Current is null || string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        UpdateDeck(d => d with { Chat = Recent(d.Chat.Add(new ChatLine(fromUser ? "user" : "agent", text, _now()))) });
+    }
+
+    /// <summary>Remembers that a slide has been performed, so it is not performed again.</summary>
+    public void MarkSpoken(string slideId)
+    {
+        if (Current is not { } deck || deck.Spoken.Contains(slideId) || deck.IndexOf(slideId) < 0)
+        {
+            return;
+        }
+
+        UpdateDeck(d => d with { Spoken = d.Spoken.Add(slideId) });
+    }
+
+    /// <summary>Slides of the open deck the user has not heard yet, in order.</summary>
+    public IReadOnlyList<string> Unspoken() =>
+        Current is { } deck ? [.. deck.Slides.Where(s => !deck.Spoken.Contains(s.Id)).Select(s => s.Id)] : [];
+
+    /// <summary>The last of a long conversation; a session lasting days need not keep all of it.</summary>
+    private static System.Collections.Immutable.ImmutableList<ChatLine> Recent(System.Collections.Immutable.ImmutableList<ChatLine> chat) =>
+        chat.Count <= MaxChat ? chat : chat.RemoveRange(0, chat.Count - MaxChat);
 
     /// <summary>Records where an image source was saved, relative to the deck folder.</summary>
     public void AddAsset(string source, string relativePath) =>

@@ -349,13 +349,28 @@ public sealed class ConversationPanel : Border
         ClearContext();
     }
 
-    public void AddMessage(bool fromUser, string text, bool isError = false)
+    /// <summary>A line about the conversation rather than in it: when it was reopened.</summary>
+    public void AddNote(string text)
+    {
+        _messages.Children.Remove(_empty);
+        _messages.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontSize = 11,
+            Foreground = _theme.Brush(_theme.Faint),
+            TextAlignment = TextAlignment.Center,
+            Margin = new Thickness(0, 6, 0, 2),
+        });
+    }
+
+    public void AddMessage(bool fromUser, string text, bool isError = false, DateTimeOffset? at = null)
     {
         _messages.Children.Remove(_empty);
 
+        var when = (at ?? DateTimeOffset.Now).ToLocalTime();
         var who = new TextBlock
         {
-            Text = $"{(fromUser ? "You" : "Agent")} · {DateTime.Now:HH:mm}",
+            Text = $"{(fromUser ? "You" : "Agent")} · {(when.Date == DateTimeOffset.Now.Date ? when.ToString("HH:mm") : when.ToString("d MMM HH:mm"))}",
             FontSize = 11,
             Foreground = _theme.Brush(isError ? _theme.Danger : fromUser ? _theme.Muted : _theme.Cool),
         };

@@ -6,6 +6,7 @@ using Intrf4ce.Core.Decks;
 using Intrf4ce.Core.Events;
 using Intrf4ce.Core.Model;
 using Intrf4ce.Core.Narration;
+using Intrf4ce.Core.Settings;
 using Intrf4ce.Core.Stage;
 
 namespace Intrf4ce.Agent.Tools;
@@ -27,14 +28,16 @@ public sealed class PresenterTools : IToolDispatcher
     private readonly IStage _stage;
     private readonly EventHub _events;
     private readonly IMediaTools _media;
+    private readonly ISettingsAccess _settings;
     private readonly IReadOnlyDictionary<string, Func<JsonObject, McpSession?, CancellationToken, Task<ToolResult>>> _handlers;
 
-    public PresenterTools(DeckService decks, IStage stage, EventHub events, IMediaTools media)
+    public PresenterTools(DeckService decks, IStage stage, EventHub events, IMediaTools media, ISettingsAccess settings)
     {
         _decks = decks;
         _stage = stage;
         _events = events;
         _media = media;
+        _settings = settings;
 
         _handlers = new Dictionary<string, Func<JsonObject, McpSession?, CancellationToken, Task<ToolResult>>>(StringComparer.Ordinal)
         {
@@ -54,6 +57,10 @@ public sealed class PresenterTools : IToolDispatcher
             ["snapshot"] = (a, _, c) => SnapshotAsync(a, c),
             ["inspect_image"] = (a, _, c) => InspectImageAsync(a, c),
             ["scan_media"] = (a, _, c) => ScanMediaAsync(a, c),
+            ["set_playback"] = (a, _, c) => PlaybackAsync(a, c),
+            ["get_settings"] = (_, _, _) => Task.FromResult(GetSettings()),
+            ["set_setting"] = (a, _, _) => Task.FromResult(SetSetting(a)),
+            ["describe_deck"] = (a, _, _) => Task.FromResult(DescribeDeck(a)),
         };
     }
 
@@ -98,8 +105,10 @@ public sealed class PresenterTools : IToolDispatcher
                     title = s.Title,
                     elements = s.Elements.Select(e => $"{e.Id} ({e.TypeName})"),
                     narrated = !string.IsNullOrWhiteSpace(s.Narration),
+                    played = deck.Spoken.Contains(s.Id),
                 }),
             },
+            unplayed = _decks.Unspoken(),
             current = state.CurrentIndex < 0 ? null : new { n = state.CurrentIndex + 1, id = state.CurrentSlideId },
             playback = state.Playback,
             focus = state.Focus,
@@ -118,11 +127,67 @@ public sealed class PresenterTools : IToolDispatcher
             {
                 id = d.Id,
                 title = d.Title,
+                about = d.Subject,
                 slides = d.Slides,
                 modified = d.Modified.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
             }),
             open = _decks.Current?.Id,
         });
+
+    /// <summary>
+    /// Another session, read without disturbing the one on the stage.
+    /// </summary>
+    /// <remarks>
+    /// Opening a deck to see what is in it would take the user's presentation off the stage,
+    /// which is a rude way to answer "what did we say about this last week".
+    /// </remarks>
+    private ToolResult DescribeDeck(JsonObject arguments)
+    {
+        var id = RequireString(arguments, "id");
+        Deck deck;
+        try
+        {
+            deck = _decks.Current is { } open && open.Id == id ? open : _decks.Store.Load(id);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or ArgumentException or InvalidDataException)
+        {
+            var known = string.Join(", ", _decks.Store.List().Select(d => d.Id));
+            throw new ToolInputException($"{ex.Message} Presentations: {(known.Length == 0 ? "none yet" : known)}.");
+        }
+
+        return ToolResult.Json(new
+        {
+            id = deck.Id,
+            title = deck.Title,
+            modified = deck.Modified.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
+            open = deck.Id == _decks.Current?.Id,
+            slides = deck.Slides.Select((s, i) => new
+            {
+                n = i + 1,
+                id = s.Id,
+                title = s.Title,
+                about = Gist(s),
+            }),
+            conversation = deck.Chat.TakeLast(10).Select(c => $"{c.Who}: {Gist(c.Text, 200)}"),
+            note = deck.Id == _decks.Current?.Id
+                ? "this is the presentation on the stage"
+                : "not open; open_deck puts it on the stage, which takes the current one off",
+        });
+    }
+
+    /// <summary>A slide in a line: what it shows, and the start of what is said over it.</summary>
+    private static string Gist(Slide slide)
+    {
+        var elements = string.Join(", ", slide.Elements.Select(e => e.TypeName).Distinct());
+        var narration = slide.Narration is { Length: > 0 } text ? " — " + Gist(CueParser.Parse(text).Text, 120) : "";
+        return elements + narration;
+    }
+
+    private static string Gist(string text, int length)
+    {
+        var flat = text.ReplaceLineEndings(" ").Trim();
+        return flat.Length <= length ? flat : flat[..(length - 1)].TrimEnd() + "…";
+    }
 
     private ToolResult NewDeck(JsonObject arguments)
     {
@@ -431,6 +496,66 @@ public sealed class PresenterTools : IToolDispatcher
                 camera = i.Camera,
             }),
         });
+    }
+
+    private async Task<ToolResult> PlaybackAsync(JsonObject arguments, CancellationToken cancellationToken)
+    {
+        var deck = _decks.Current ?? throw new ToolInputException("No deck is open.");
+        var action = OptionalString(arguments, "playback");
+        if (action is not (null or "play" or "pause" or "stop"))
+        {
+            throw new ToolInputException("playback is play, pause or stop");
+        }
+
+        foreach (var name in new[] { "from", "through" })
+        {
+            if (OptionalString(arguments, name) is { } slide && deck.Find(slide) is null)
+            {
+                throw new ToolInputException(
+                    $"{name}: there is no slide '{slide}' (slides: {string.Join(", ", deck.Slides.Select(s => s.Id))}).");
+            }
+        }
+
+        var request = new PlaybackRequest(
+            action,
+            OptionalString(arguments, "from"),
+            OptionalString(arguments, "through"),
+            Flag(arguments, "continuous"),
+            Flag(arguments, "muted"),
+            Flag(arguments, "subtitles"));
+
+        var now = await _stage.PlaybackAsync(request, cancellationToken).ConfigureAwait(false);
+        return ToolResult.Json(new { playback = now });
+    }
+
+    private ToolResult GetSettings() =>
+        ToolResult.Json(new
+        {
+            file = _settings.File,
+            settings = _settings.Read().Select(s => new
+            {
+                key = s.Entry.Key,
+                value = s.Value,
+                is_ = s.Entry.Kind.ToString().ToLowerInvariant(),
+                of = s.Entry.Choices,
+                between = s.Entry.Kind == SettingKind.Number ? new[] { s.Entry.Minimum, s.Entry.Maximum } : null,
+                about = s.Entry.Description,
+                restart = s.Entry.NeedsRestart ? true : (bool?)null,
+            }),
+            note = "These belong to the user. Change one when they ask for it, not to suit yourself.",
+        });
+
+    private ToolResult SetSetting(JsonObject arguments)
+    {
+        var key = RequireString(arguments, "key");
+        var value = RequireString(arguments, "value");
+
+        if (_settings.Write(key, value) is { } error)
+        {
+            return ToolResult.Error(error);
+        }
+
+        return ToolResult.Json(new { set = key, to = value, note = "in force now unless it says it needs a restart" });
     }
 
     private async Task<ToolResult> ReportAsync(

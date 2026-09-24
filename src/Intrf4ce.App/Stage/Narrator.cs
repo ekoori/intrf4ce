@@ -73,6 +73,9 @@ public sealed class Narrator
     /// <summary>Speaking started or stopped; for the orb and get_state.</summary>
     public event EventHandler? StateChanged;
 
+    /// <summary>A slide was performed to the user; the deck remembers, so it is not repeated.</summary>
+    public event EventHandler<string>? SlideSpoken;
+
     /// <summary>stopped, idle, preparing, speaking, paused or waiting.</summary>
     public string State => Held ? "stopped by the user"
         : _waitingForNext ? "waiting for the next slide"
@@ -183,6 +186,43 @@ public sealed class Narrator
         {
             _advanceAsLoaded = _settings.Advance;
             Continuous = string.Equals(_settings.Advance, "auto", StringComparison.OrdinalIgnoreCase);
+        }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Play, pause or stop, each said outright rather than toggled.
+    /// </summary>
+    /// <remarks>
+    /// The keys and the buttons toggle, because that is what a person pressing them means. An
+    /// agent asking for "play" means play, whatever is happening now, and must not silence a
+    /// slide by asking twice.
+    /// </remarks>
+    public void Perform(string action, Slide? current)
+    {
+        switch (action)
+        {
+            case "play":
+                Held = false;
+                if (_now is { Paused: true } || (_now is null && _preparing is null))
+                {
+                    Toggle(current);
+                }
+
+                break;
+
+            case "pause":
+                if (_now is { Paused: false })
+                {
+                    Toggle(current);
+                }
+
+                break;
+
+            case "stop":
+                Hold();
+                return;
         }
 
         StateChanged?.Invoke(this, EventArgs.Empty);
@@ -348,6 +388,13 @@ public sealed class Narrator
         }
 
         var performance = new Performance(slide, parsed, clip, Captions.Split(parsed.Text), Captions.Words(parsed.Text));
+
+        // Counted as performed once it starts, not once it ends: a user who has heard the first
+        // half and moved on does not want it read to them again.
+        if (slide is not null)
+        {
+            SlideSpoken?.Invoke(this, slide.Id);
+        }
 
         if (clip.AudioPath is not null && _audio.IsAvailable)
         {
