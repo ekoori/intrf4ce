@@ -103,7 +103,7 @@ public sealed class MainWindow : Window
 
         _stage = new StageView(_theme) { AnimationSpeed = settings.Stage.AnimationSpeed };
         _root = new Grid();
-        var context = new ElementContext(_theme, _renderer, images, PublishFromStage);
+        var context = new ElementContext(_theme, _renderer, images, new TileSource(_http, paths.Cache), PublishFromStage);
         _controller = new StageController(_stage, context, _decks, () => _stage)
         {
             FollowAgent = settings.Stage.FollowAgent,

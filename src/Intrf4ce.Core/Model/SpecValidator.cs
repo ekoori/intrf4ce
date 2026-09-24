@@ -203,6 +203,7 @@ public static partial class SpecValidator
                 ? ElementParts.GalleryItems(gallery.Items ?? [], new HashSet<string>(StringComparer.Ordinal)).ToList()
                 : null,
             TableElement table => ElementParts.TableRows(table).ToList(),
+            MapElement map => ElementParts.Places(map.Places ?? []).ToList(),
             MarkdownElement => null,
             DiagramElement => null,
             _ => [],
@@ -281,6 +282,10 @@ public static partial class SpecValidator
 
             case QuizElement quiz:
                 ValidateQuiz(quiz, path, issues);
+                break;
+
+            case MapElement map:
+                ValidateMap(map, path, issues);
                 break;
         }
     }
@@ -457,6 +462,51 @@ public static partial class SpecValidator
             }
         }
     }
+
+    private static void ValidateMap(MapElement map, string path, List<SpecIssue> issues)
+    {
+        var places = map.Places ?? [];
+        if (places.Count == 0 && map.Center is null)
+        {
+            Error(issues, path, "a map needs places, or a center to show");
+        }
+
+        if (map.Center is { } centre && !IsPlace(centre))
+        {
+            Error(issues, path + ".center", "center is [latitude, longitude]: latitude -90 to 90, longitude -180 to 180");
+        }
+
+        if (map.Zoom is { } zoom && (zoom < WebMercator.MinZoom || zoom > WebMercator.MaxZoom))
+        {
+            Error(issues, path + ".zoom", $"zoom is {WebMercator.MinZoom} (the world) to {WebMercator.MaxZoom} (a doorway)");
+        }
+
+        for (var i = 0; i < places.Count; i++)
+        {
+            var where = $"{path}.places[{i}]";
+            Required(issues, where + ".label", places[i].Label);
+
+            if (places[i].At is not { } at)
+            {
+                Error(issues, where + ".at", "at is [latitude, longitude]; every place needs one");
+            }
+            else if (!IsPlace(at))
+            {
+                Error(issues, where + ".at",
+                    $"[{string.Join(", ", at)}] is not a place: at is [latitude, longitude], latitude -90 to 90, longitude -180 to 180"
+                    + (at.Length == 2 && Math.Abs(at[0]) > 90 && Math.Abs(at[1]) <= 90 ? " (the wrong way round?)" : ""));
+            }
+
+            if (places[i].Zoom is { } close && (close < WebMercator.MinZoom || close > WebMercator.MaxZoom))
+            {
+                Error(issues, where + ".zoom", $"zoom is {WebMercator.MinZoom} to {WebMercator.MaxZoom}");
+            }
+        }
+    }
+
+    private static bool IsPlace(double[] at) =>
+        at is [var latitude, var longitude] && Math.Abs(latitude) <= 90 && Math.Abs(longitude) <= 180
+        && !double.IsNaN(latitude) && !double.IsNaN(longitude);
 
     private static void ValidateQuiz(QuizElement quiz, string path, List<SpecIssue> issues)
     {

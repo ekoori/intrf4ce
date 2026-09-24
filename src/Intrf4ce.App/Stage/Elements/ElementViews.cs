@@ -21,6 +21,7 @@ public static class ElementViews
         TableElement table => new TableView(context, table),
         GalleryElement gallery => new GalleryView(context, gallery),
         QuizElement quiz => new QuizView(context, quiz),
+        MapElement map => new MapView(context, map),
         _ => new PlaceholderView(context, element),
     };
 

@@ -25,6 +25,7 @@ namespace Intrf4ce.Core.Model;
 [JsonDerivedType(typeof(TableElement), "table")]
 [JsonDerivedType(typeof(GalleryElement), "gallery")]
 [JsonDerivedType(typeof(QuizElement), "quiz")]
+[JsonDerivedType(typeof(MapElement), "map")]
 public abstract record Element
 {
     /// <summary>Unique within the slide; generated when the agent leaves it out.</summary>
@@ -187,6 +188,51 @@ public sealed record GalleryItem
     public string Src { get; init; } = "";
 
     public string? Caption { get; init; }
+}
+
+/// <summary>
+/// A map of somewhere, with the places the narration walks through marked on it.
+/// </summary>
+/// <remarks>
+/// Drawn from OpenStreetMap's tiles. A place is a focus target like any other part, so
+/// <c>[[focus journey.cairo]]</c> flies the map to Cairo as the voice says the word — which is
+/// the whole reason a presentation wants a map rather than a picture of one.
+/// </remarks>
+public sealed record MapElement : Element
+{
+    /// <summary>The places to mark, in the order the narration visits them.</summary>
+    public IReadOnlyList<Place>? Places { get; init; }
+
+    /// <summary>[latitude, longitude] of the middle; omit to frame the places.</summary>
+    public double[]? Center { get; init; }
+
+    /// <summary>0 for the whole world, 19 for a doorway; omit to fit the places.</summary>
+    public double? Zoom { get; init; }
+
+    /// <summary>Draw a line from each place to the next: a journey, a route, a flight path.</summary>
+    public bool Route { get; init; }
+
+    public override string TypeName => "map";
+
+    public override bool IsVisual => true;
+}
+
+/// <summary>Somewhere on a map, with a label and, if it earns one, a sentence.</summary>
+public sealed record Place
+{
+    /// <summary>Focus it with <c>[[focus mapId.placeId]]</c>; made from the label when omitted.</summary>
+    public string? Id { get; init; }
+
+    public string Label { get; init; } = "";
+
+    /// <summary>[latitude, longitude] in degrees: 51.5, -0.13 is London.</summary>
+    public double[]? At { get; init; }
+
+    /// <summary>A sentence shown when the place is focused.</summary>
+    public string? Detail { get; init; }
+
+    /// <summary>How close in to go when the narration focuses this place; omit for a sensible one.</summary>
+    public double? Zoom { get; init; }
 }
 
 public sealed record QuizElement : Element

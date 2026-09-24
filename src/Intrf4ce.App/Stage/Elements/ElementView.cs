@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Intrf4ce.App.Media;
 using Intrf4ce.Core.Model;
+using Intrf4ce.Media.Images;
 using Intrf4ce.Core.Rendering;
 
 namespace Intrf4ce.App.Stage.Elements;
@@ -14,6 +15,7 @@ public sealed record ElementContext(
     Skin Skin,
     IRenderService Renderer,
     ImageLoader Images,
+    TileSource Tiles,
     Action<string, string, IReadOnlyDictionary<string, string>> Publish);
 
 /// <summary>

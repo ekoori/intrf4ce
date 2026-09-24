@@ -50,6 +50,23 @@ public static class ElementParts
         return [.. items.Select((item, i) => item.Id is { Length: > 0 } id ? id : Unique($"item{i + 1}", used))];
     }
 
+    /// <summary>Ids for the places on a map: the agent's own, or slugs of their labels.</summary>
+    public static IReadOnlyList<string> Places(IReadOnlyList<Place> places)
+    {
+        ArgumentNullException.ThrowIfNull(places);
+
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var place in places)
+        {
+            if (place.Id is { Length: > 0 } id)
+            {
+                used.Add(id);
+            }
+        }
+
+        return [.. places.Select((place, i) => place.Id is { Length: > 0 } id ? id : Unique(Slug.From(place.Label, $"place{i + 1}"), used))];
+    }
+
     /// <summary>An id for a photo found in a folder, from its file name ("IMG_2031.jpg" is img-2031).</summary>
     public static string Photo(string fileName, ISet<string> used) =>
         Unique(Slug.From(Path.GetFileNameWithoutExtension(fileName), "photo"), used);

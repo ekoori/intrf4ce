@@ -7,7 +7,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["title", "markdown", "image", "diagram", "math", "chart", "table", "gallery", "quiz"]
+          "enum": ["title", "markdown", "image", "diagram", "math", "chart", "table", "gallery", "quiz", "map"]
         },
         "id": { "type": "string", "description": "Unique on the slide; cues and focus use it (e.g. 'knee'). Letters, digits, '_' and '-'. Generated if omitted." },
         "area": { "type": "string", "description": "Which region: 'left'/'right' in split, 'main'/'side' in wide. Optional; order decides otherwise." },
@@ -70,6 +70,25 @@
         },
         "folder": { "type": "string", "description": "gallery: show the images in this folder (their EXIF is shown on hover)." },
         "arrange": { "type": "string", "enum": ["scatter", "grid", "timeline"], "description": "gallery: scatter (an organic pile, default), grid, or timeline by date taken." },
+
+        "places": {
+          "type": "array",
+          "description": "map: the places to mark, in the order the narration visits them. Each is a focus target: [[focus journey.cairo]] flies the map there as the voice says the word.",
+          "items": {
+            "type": "object",
+            "required": ["label", "at"],
+            "properties": {
+              "id": { "type": "string", "description": "Focus it with [[focus mapId.placeId]]; made from the label when omitted." },
+              "label": { "type": "string", "description": "The name on the map; a few words." },
+              "at": { "type": "array", "items": { "type": "number" }, "description": "[latitude, longitude] in degrees: [51.5074, -0.1278] is London. Latitude first." },
+              "detail": { "type": "string", "description": "A sentence shown when the place is focused." },
+              "zoom": { "type": "number", "description": "How close in to go for this place: 4 a country, 10 a city, 15 a street." }
+            }
+          }
+        },
+        "center": { "type": "array", "items": { "type": "number" }, "description": "map: [latitude, longitude] of the middle; omit to frame the places." },
+        "zoom": { "type": "number", "description": "map: 0 the world, 4 a country, 10 a city, 15 a street, 19 a doorway. Omit to fit the places." },
+        "route": { "type": "boolean", "description": "map: draw a line from each place to the next, and number them: a journey, a route, a campaign." },
 
         "question": { "type": "string", "description": "quiz: the question." },
         "options": { "type": "array", "items": { "type": "string" }, "description": "quiz: two or more choices." },
