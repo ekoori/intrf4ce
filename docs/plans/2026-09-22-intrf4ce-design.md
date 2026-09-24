@@ -313,15 +313,27 @@ table rows and a folder's photos — which are slugs ("Knee joint" is `knee-join
 is `img-2031`) so the validator can check a cue before anything is drawn.
 | **M4 Cross-platform and polish** | `say`, espeak and Piper engines; Linux container smoke test; channels; overview; library; settings hot reload; four-RID packaging; README |
 
-### Asked for, not yet built
+### Built after M4, from use
 
-- **A map element.** Google Maps or Earth, or OpenStreetMap, so a presentation can travel
-  between places: a route, a region outlined, a camera flight from one location to the next with
-  the narration. It fits the existing shape — an element the agent describes (centre, zoom,
-  markers, outlines, a path) with its own parts to focus, `[[focus map.venice]]` — and the
-  question to settle first is the renderer: raster tiles drawn natively (no key, works offline
-  once cached, OSM's terms) against an embedded map in the hidden web view (Google's imagery and
-  3D, but a key, a licence and a live connection).
+- **A map element.** Asked for as "a presentation can go through locations". Built with
+  OpenStreetMap raster tiles drawn natively rather than an embedded map in the hidden web view:
+  no key, no licence to sign, it works offline once cached, and the places are parts like any
+  other, so `[[focus nile.khartoum]]` flies the map as the voice says the word. Google's imagery
+  and 3D would have meant a key, a licence and a live connection for every showing.
+- **A session is a conversation.** The deck keeps the questions that built it and which slides
+  have been performed; reopening one puts both back, and the agent is told what the user has
+  already heard so a new answer plays the new slides rather than the deck again. Every message to
+  the agent carries where the user is and what is focused, which is what makes "how deep is that?"
+  answerable.
+- **The controls a person looks for.** The transport says what it controls — this slide, or the
+  whole deck; the voice; the subtitles — with the deck's own arrows in the other corner. A
+  settings panel on the stage writes one line of `settings.yaml` at a time and leaves the rest of
+  the file alone, so the panel, a text editor and the agent's `set_setting` are one mechanism.
+- **A picture, properly looked at.** Double-clicking enlarges it to fill the stage; a box dragged
+  over any part of it can be asked about, and the question carries the box in the picture's own
+  coordinates — the ones callouts are already written in.
+
+### Asked for, not yet built
 
 Not in v1 (YAGNI until asked): video, embedded live web pages, a native "exploded layers"
 element, collaborative decks, export to PPTX/PDF.

@@ -30,6 +30,16 @@ SkiaSharp carries Skia (BSD-3-Clause) and HarfBuzz (MIT). SoundFlow carries mini
 (public domain / MIT-0). The hidden renderer uses the platform's own web engine — WebView2 on
 Windows, WKWebView on macOS, WebKitGTK on Linux — which intrf4ce does not redistribute.
 
+## Map data
+
+Maps are drawn from [OpenStreetMap](https://www.openstreetmap.org/) tiles. Map data is
+© OpenStreetMap contributors, available under the
+[Open Database License](https://www.openstreetmap.org/copyright); the tiles themselves are served
+by the OpenStreetMap Foundation under its
+[tile usage policy](https://operations.osmfoundation.org/policies/tiles/). intrf4ce identifies
+itself, caches what it fetches, asks for a couple of tiles at a time, and draws the credit on
+every map it shows. Point `map` elements at another tile server if your use outgrows that policy.
+
 ## Content the app fetches
 
 Images an agent puts on a slide are downloaded into the deck's folder and stay the property of

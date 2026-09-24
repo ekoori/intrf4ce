@@ -40,6 +40,7 @@ running window, and starts the window if it is not open yet.
 | `table` | numbers aligned and grouped, headings that sort, rows you can focus |
 | `gallery` | a folder of photos or a list of items: a scattered pile, a grid, or a timeline by date taken |
 | `quiz` | single or multiple choice; the answer goes back to the agent |
+| `map` | OpenStreetMap, with the places the narration visits marked and joined; focusing a place flies the map to it |
 
 Narration carries cues that fire as the voice reaches them: `[[focus knee.acl]]` zooms to a callout
 and dims the rest, `[[zoom map 0.2 0.3 0.4 0.3]]` frames a region, `[[show chart]]` reveals a hidden
@@ -54,23 +55,41 @@ element, `[[clear]]` returns to the whole slide.
 | `Home` `End` | first, last slide |
 | `O` | overview of the whole deck |
 | `L` | sessions: every presentation on disk |
+| `N` | a new session: an empty stage and a fresh conversation |
+| `,` | settings |
 | `T` | show or hide the conversation panel |
 | `Space` | play or pause the narration |
+| `C` | keep going through the deck, or stop at the end of this slide |
 | `X` | stop: no voice, and no slide moves on by itself |
 | `M` `S` | mute, subtitles |
 | `Enter` or `/` | write to the agent |
 | `+` `-` `0` | zoom in, out, back to the slide |
 | `F` `F11` | fullscreen |
-| `Esc` | back: unfocus, leave overview, leave fullscreen |
+| `Esc` | back: unfocus, leave overview, close what is open, stop the agent |
 
-With the mouse: the wheel zooms, dragging pans, clicking a callout, a node, a photo or a row
-focuses it (and again goes back), double-clicking reframes the slide, and right-clicking anything
-offers **Ask about this**, which sends your question to the agent along with what you pointed at.
-The buttons in the bottom-left corner of the stage do the same as the keys: previous, play or
-pause, stop, next. Stop means stopped — the voice goes quiet and nothing advances until you
-press play, however much the agent adds in the meantime.
+With the mouse: the wheel zooms, dragging pans, and clicking a callout, a node, a photo, a row or
+a place on a map focuses it (and again goes back). Right-clicking anything offers **Ask about
+this**, which frames the thing on the stage and sends your question to the agent along with what
+you pointed at. Double-clicking a picture gives it the whole window; in there, dragging a box over
+any part of it and right-clicking asks about that area, and the agent is told where the box was in
+the picture's own coordinates. Double-clicking anywhere else puts the slide back as it was.
+
+The controls in the bottom-left corner are the performance: play or pause this slide, a tick for
+whether it runs on through the rest of the deck, the voice, and the subtitles. Back and forward
+are in the other corner, because moving through a deck is yours and playing is the
+presentation's. Untick **keep going** and nothing advances by itself, however much the agent adds
+in the meantime.
+
+The column on the left is every presentation on disk, with a button at the top for a new one and
+the settings at the foot of it.
 
 ## Settings
+
+The settings worth changing while something is playing — subtitles, the voice, the pacing, how
+fast the camera moves — are in a panel on the stage: the gear at the foot of the sessions column,
+or `,`. Every control there writes one line of `settings.yaml` and leaves the rest of your file,
+comments and all, exactly as you wrote it; the agent changes settings through the same door, when
+you ask it to. Everything else lives in the file, which that panel will open for you.
 
 `settings.yaml` is written on first run, with every setting and what it does. It lives in:
 
@@ -81,11 +100,14 @@ press play, however much the agent adds in the meantime.
 | Linux | `$XDG_CONFIG_HOME/intrf4ce/settings.yaml` (or `~/.config/intrf4ce`) |
 
 **Sessions.** Each presentation is a folder under `sessions`, beside the executable, holding its
-`deck.json` and the images it downloaded. A picture already on your machine is pointed at where it
-lives rather than duplicated — a folder of photographs is yours, in one place — so set
-`library.copy_media: true` when a session has to travel and should carry everything it shows; so the folder can be moved to another machine and still present. They are listed on
-the left (`L`): open one and it comes back where it was, with the agent returned to the
-conversation that built it, free to carry on or rewrite it. If the folder beside the executable
+`deck.json`, the images it downloaded, the narration it spoke and the conversation that built it.
+A picture already on your machine is pointed at where it lives rather than duplicated — a folder
+of photographs is yours, in one place — so set `library.copy_media: true` when a session has to
+travel and should carry everything it shows. They are listed on the left (`L`): open one and it
+comes back where it was, with the questions that produced it back in the panel and the agent
+returned to the conversation that built it, free to carry on or rewrite it. A new question is
+answered by slides added at the end, and the agent knows which slides you have already heard, so
+it plays the answer rather than the whole deck again. If the folder beside the executable
 cannot be written (installed under Program Files, say), sessions fall back to `Documents/intrf4ce`,
 and decks made before this lived there are moved across on first run. Voice clips, renders and
 logs are cache (`%LOCALAPPDATA%\intrf4ce` on Windows) and can be deleted at any time.

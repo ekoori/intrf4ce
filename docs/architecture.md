@@ -44,6 +44,15 @@ you have, where is a part, and what is at this point. That last one is how a cli
 stage becomes "focus the ACL callout" or "ask about the Saturn row" without each view handling
 pointer events.
 
+## Maps
+
+A `map` element is drawn natively from OpenStreetMap tiles: the Web Mercator arithmetic is in
+`Core` (a place must land on the pixel its own tile draws it at), the tiles are fetched a couple
+at a time and cached on the machine, and markers and routes are drawn over them. Focusing a place
+moves the map's own frame rather than magnifying the picture — zooming a map of Africa does not
+show you the streets of Cairo — and until the new tiles arrive the ones already held are drawn
+scaled, so there is always a map rather than a hole.
+
 ## The hidden renderer
 
 Mermaid, TeX and Vega-Lite are rendered by the platform's own web engine in a `WebView` that is
@@ -68,9 +77,12 @@ Narration lives there too, under `audio/`: clips are named by content, so a pres
 has been spoken once is spoken for ever, and a folder carried to another machine plays without a
 key. A machine-wide cache sits behind the session and is copied from, never depended on.
 
-Reopening one restores the deck, puts the hosted agent back on the conversation that built it
-(the session id is kept on the deck), and sends the agent a `resume` event so it knows what it
-is looking at before the user asks for anything.
+The deck also keeps the conversation that built it and which slides have been performed.
+Reopening one restores the slides, puts those questions back in the panel, puts the hosted agent
+back on the conversation that built it (the session id is kept on the deck), and tells the agent
+what it is looking at before the user asks for anything. A picture already on the machine is
+referenced where it lives rather than copied, unless `library.copy_media` says the session has to
+travel.
 
 ## Decks
 
@@ -95,13 +107,32 @@ not built yet is waited for rather than skipped.
 
 ## The window
 
-Two columns: the stage, and the conversation beside it. The chat used to float over the bottom
-of the stage, which meant the agent's answer covered the slide it was about; now it has a column
-of its own, holds every message rather than fading them, and collapses with `T` to a strip
-holding the agent orb — still visible, still a way back in — while the stage takes the window.
+Three columns: the sessions on disk, the stage, and the conversation. The chat used to float over
+the bottom of the stage, which meant the agent's answer covered the slide it was about; now it has
+a column of its own, holds every message rather than fading them, and collapses with `T` to a
+strip holding the agent orb — still visible, still a way back in — while the stage takes the
+window. The sessions column collapses the same way once something is on the stage, keeping the
+settings within reach at its foot.
+
+On the stage itself: the performance controls in one bottom corner (play this slide, keep going
+through the deck, the voice, the subtitles) and the deck's own arrows in the other, because moving
+through a deck is the reader's and playing is the presentation's. Double-clicking a picture gives
+it the whole column, where a box dragged over any part of it can be asked about; the question
+carries that box in the picture's own coordinates, which are the ones callouts are written in.
+
+Settings are a panel over the stage. Each control writes one line of `settings.yaml` and lets the
+watcher apply it, so there is one way settings change, whoever changes them — the panel, a text
+editor, or the agent's `set_setting`. The list of what can be changed lives in `SettingsSchema`,
+which is what the panel draws and what the agent's tool will accept.
 
 ## Events back to the agent
 
 Chat messages, quiz answers and "ask about this" clicks go to exactly one place: the hosted
 agent's stdin, or an attached session that opened a Claude Code channel, or the queue that
 `wait_for_user` drains. Sending them everywhere would have two agents answer the same question.
+
+Every one of them carries where the user was: the slide, what was focused on it, what was
+playing, and which slides they have not yet heard. Without that, "how deep is that?" reaches the
+agent as four words about nothing. The agent can work the same controls back through
+`set_playback` — including playing a range of slides, which is how the answer to a new question
+gets performed without replaying the deck.
