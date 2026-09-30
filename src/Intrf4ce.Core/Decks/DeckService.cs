@@ -20,6 +20,9 @@ public enum DeckChangeKind
 
     /// <summary>The deck was put away; the stage is empty and nothing is open.</summary>
     Closed,
+
+    /// <summary>A session that is not open changed on disk (its group); only the list cares.</summary>
+    Library,
 }
 
 public sealed class DeckChangedEventArgs(DeckChangeKind kind, Deck deck, string? slideId) : EventArgs
@@ -261,6 +264,44 @@ public sealed class DeckService : IDisposable
         }
 
         UpdateDeck(d => d with { Chat = Recent(d.Chat.Add(new ChatLine(fromUser ? "user" : "agent", text, _now()))) });
+    }
+
+    /// <summary>
+    /// Files a session under a group — the open one through the live snapshot, any other on
+    /// disk — or, with null, takes it out of its group.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">There is no such session.</exception>
+    public void SetGroup(string deckId, string? group)
+    {
+        if (Current is { } open && open.Id == deckId)
+        {
+            Deck next;
+            lock (_gate)
+            {
+                next = RequireOpen() with { Group = DeckStore.Group(group) };
+                _current = next;
+            }
+
+            Publish(DeckChangeKind.DeckUpdated, next, null);
+            return;
+        }
+
+        _store.SetGroup(deckId, group);
+        Changed?.Invoke(this, new DeckChangedEventArgs(DeckChangeKind.Library, Current ?? new Deck { Id = deckId }, null));
+    }
+
+    /// <summary>Renames a group across every session filed under it.</summary>
+    /// <returns>How many sessions moved.</returns>
+    public int RenameGroup(string from, string to)
+    {
+        var moved = 0;
+        foreach (var info in _store.List().Where(d => string.Equals(d.Group, from, StringComparison.Ordinal)))
+        {
+            SetGroup(info.Id, to);
+            moved++;
+        }
+
+        return moved;
     }
 
     /// <summary>Remembers that a slide has been performed, so it is not performed again.</summary>

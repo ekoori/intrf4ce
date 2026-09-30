@@ -98,7 +98,7 @@ public sealed class DeckStore
             try
             {
                 var deck = Read(file);
-                decks.Add(new DeckInfo(deck.Id, deck.Title, deck.Count, deck.Modified, folder, deck.Slides.FirstOrDefault()?.Title));
+                decks.Add(new DeckInfo(deck.Id, deck.Title, deck.Count, deck.Modified, folder, deck.Slides.FirstOrDefault()?.Title, deck.Group));
             }
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
             {
@@ -161,6 +161,19 @@ public sealed class DeckStore
         File.WriteAllText(temporary, JsonSerializer.Serialize(deck, DeckJson.File));
         File.Move(temporary, target, overwrite: true);
     }
+
+    /// <summary>
+    /// Files a closed session under a group, or takes it out of one, without disturbing when
+    /// it was last changed — filing is not editing, and the list is ordered by the latter.
+    /// </summary>
+    public void SetGroup(string deckId, string? group)
+    {
+        var deck = Load(deckId);
+        Save(deck with { Group = Group(group) });
+    }
+
+    /// <summary>A group name as stored: trimmed, and null for nothing.</summary>
+    public static string? Group(string? name) => string.IsNullOrWhiteSpace(name) ? null : name.Trim();
 
     /// <summary>The absolute path of an asset recorded in the deck, if the file is there.</summary>
     public string? ResolveAsset(Deck deck, string source)

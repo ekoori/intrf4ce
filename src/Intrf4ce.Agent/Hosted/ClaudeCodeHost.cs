@@ -643,6 +643,7 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             "wait_for_user" => "Listening",
             "set_playback" => "",
             "describe_deck" => "Looking at another session",
+            "group_decks" or "rename_group" => "Filing sessions",
             "get_settings" or "set_setting" => "Checking the settings",
             "reply" or "say" or "get_state" or "go_to" or "focus" => "",
             _ => shortName.Replace('_', ' '),

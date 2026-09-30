@@ -26,9 +26,9 @@ public sealed class SlideNav : Border
 
         HorizontalAlignment = HorizontalAlignment.Right;
         VerticalAlignment = VerticalAlignment.Bottom;
-        Margin = new Thickness(0, 0, 20, 20);
-        Padding = new Thickness(6);
-        CornerRadius = new CornerRadius(25);
+        Margin = new Thickness(0, 0, 16, Metrics.BottomInset - Metrics.PillPadding);
+        Padding = new Thickness(Metrics.PillPadding);
+        CornerRadius = new CornerRadius((Metrics.Button / 2) + Metrics.PillPadding);
         Background = new SolidColorBrush(Color.FromArgb(150, 0x08, 0x0C, 0x11));
 
         _previous = new IconButton(skin, Glyph.Previous, "Previous slide (←)", () => Previous?.Invoke(this, EventArgs.Empty));

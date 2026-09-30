@@ -8,13 +8,16 @@ using Intrf4ce.Agent.Hosted;
 using Intrf4ce.Agent.Mcp;
 using Intrf4ce.Agent.Tools;
 using Intrf4ce.App.Hud;
+using Intrf4ce.App.Input;
 using Intrf4ce.App.Media;
 using Intrf4ce.App.Render;
 using Intrf4ce.App.Stage;
 using Intrf4ce.App.Stage.Elements;
 using Intrf4ce.Core;
+using Intrf4ce.Core.Commands;
 using Intrf4ce.Core.Decks;
 using Intrf4ce.Core.Events;
+using Intrf4ce.Core.Input;
 using Intrf4ce.Core.Model;
 using Intrf4ce.Core.Settings;
 using Intrf4ce.Core.Stage;
@@ -31,7 +34,7 @@ namespace Intrf4ce.App;
 /// Every object is built here by hand, as in Fjord: the graph is shallow enough to read in one
 /// place, and a dependency nobody supplied fails to compile rather than at startup.
 /// </remarks>
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     private readonly Skin _theme = Skin.Default;
     private readonly DeckService _decks;
@@ -56,6 +59,12 @@ public sealed class MainWindow : Window
     private readonly SessionsPanel _sessions;
     private readonly SettingsPanel _preferences;
     private readonly ImageInspector _inspector;
+    private readonly TitleBar _titleBar;
+    private readonly PromptBar _prompt;
+    private readonly HelpPanel _help;
+    private readonly KeyMap _keyMap = new();
+    private readonly KeyReader _keyReader;
+    private readonly CommandRegistry _commands = new();
     private readonly AppPaths _paths;
     private readonly AppSettings _settings;
     private readonly SettingsWatcher? _watcher;
@@ -78,6 +87,11 @@ public sealed class MainWindow : Window
         MinWidth = 640;
         MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+
+        // No system title bar: ours is the app's colour and carries the half-typed keys. The
+        // frame stays, so the window still resizes from its edges and snaps.
+        WindowDecorations = WindowDecorations.BorderOnly;
+        _keyReader = new KeyReader(_keyMap);
         Background = new SolidColorBrush(_theme.Ink);
 
         // ---- services
@@ -132,6 +146,9 @@ public sealed class MainWindow : Window
         _sessions = new SessionsPanel(_theme);
         _preferences = new SettingsPanel(_theme, paths.SettingsFile);
         _inspector = new ImageInspector(_theme);
+        _titleBar = new TitleBar(_theme, this);
+        _prompt = new PromptBar(_theme);
+        _help = new HelpPanel(_theme);
         _welcome = new WelcomePanel(_theme);
         _subtitles = new SubtitleBar(_theme);
         _narrator = new Narrator(_voices, _audio, _controller, _subtitles, _chat.Orb, settings.Narration);
@@ -162,7 +179,9 @@ public sealed class MainWindow : Window
         presentation.Children.Add(_subtitles);
         presentation.Children.Add(_transport);
         presentation.Children.Add(_nav);
+        presentation.Children.Add(_prompt);
         presentation.Children.Add(_inspector);
+        presentation.Children.Add(_help);
         presentation.Children.Add(_preferences);
 
         // Sessions on the left, the stage in the middle, the conversation on the right.
@@ -173,7 +192,11 @@ public sealed class MainWindow : Window
         _root.Children.Add(_sessions);
         _root.Children.Add(presentation);
         _root.Children.Add(_chat);
-        Content = _root;
+        var window = new DockPanel();
+        DockPanel.SetDock(_titleBar, Dock.Top);
+        window.Children.Add(_titleBar);
+        window.Children.Add(_root);
+        Content = window;
 
         // A share of the window, within reason: wide enough to read, never half the stage.
         SizeChanged += (_, e) =>
@@ -207,6 +230,27 @@ public sealed class MainWindow : Window
         });
 
         _chat.Submitted += (_, text) => OnChat(text);
+        _chat.TalkRequested += (_, _) => Talk();
+
+        _prompt.Complete = _commands.Complete;
+        _prompt.Submitted += (_, entry) =>
+        {
+            _stage.Focus();
+            if (entry.Mode == PromptMode.Command)
+            {
+                Execute(entry.Text);
+            }
+            else
+            {
+                Say(entry.Text);
+            }
+        };
+
+        _prompt.Dismissed += (_, _) => _stage.Focus();
+
+        _commands.Register(this);
+        RegisterChoices();
+        LoadKeys(settings);
         _chat.Dismissed += (_, _) => _stage.Focus();
         _chat.ContextCleared += (_, _) => _asking = null;
         _chat.StopRequested += (_, _) => StopAgent();
@@ -237,6 +281,8 @@ public sealed class MainWindow : Window
         _sessions.Picked += (_, id) => OpenDeck(id);
         _sessions.NewRequested += (_, _) => NewSession();
         _sessions.SettingsRequested += (_, _) => ShowSettings(!_preferences.IsVisible);
+        _sessions.Regrouped += (_, move) => Regroup(move.Id, move.Group);
+        _sessions.GroupRenamed += (_, rename) => Guard(() => _decks.RenameGroup(rename.From, rename.To));
         _decks.Changed += (_, e) => Dispatcher.UIThread.Post(
             () =>
             {
@@ -407,6 +453,26 @@ public sealed class MainWindow : Window
         Log.Write("new session");
     }
 
+    /// <summary>Files a session under a group, or takes it out of one.</summary>
+    private void Regroup(string id, string? group) => Guard(() => _decks.SetGroup(id, group));
+
+    /// <summary>Runs something a click asked for, reporting a failure rather than letting it escape.</summary>
+    private void Guard(Action action)
+    {
+        try
+        {
+            action();
+            ListSessions();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FileNotFoundException
+            or System.Text.Json.JsonException or ArgumentException)
+        {
+            _prompt.ShowMessage(ex.Message, error: true);
+        }
+    }
+
+    private void Guard(Func<int> action) => Guard(() => { _ = action(); });
+
     private void ShowSettings(bool show)
     {
         if (show)
@@ -531,6 +597,7 @@ public sealed class MainWindow : Window
         _stage.AnimationSpeed = _settings.Stage.AnimationSpeed;
         _controller.FollowAgent = _settings.Stage.FollowAgent;
         _narrator.SettingsChanged();
+        ApplyUserKeys(_settings);
 
         foreach (var warning in load.Warnings ?? [])
         {
@@ -737,7 +804,7 @@ public sealed class MainWindow : Window
         ask.Click += (_, _) =>
         {
             _asking = subject;
-            _chat.SetContext(label);
+            Talk(label);
             if (subject.Target is { } target)
             {
                 _controller.Focus(target, null);
@@ -774,7 +841,7 @@ public sealed class MainWindow : Window
     private void AskAboutRegion(ImageQuestion question)
     {
         _asking = new AskSubject(question.SlideId, question.ElementId, question.ElementId, question.Label, question.Region);
-        _chat.SetContext(question.Label);
+        Talk(question.Label);
         _controller.Focus(question.ElementId, question.Region);
     }
 
@@ -855,6 +922,7 @@ public sealed class MainWindow : Window
     {
         var deck = _controller.Deck;
         _header.Update(deck?.Title, _controller.CurrentIndex, deck?.Count ?? 0, _controller.IsOverview);
+        _titleBar.SetTitle(deck?.Title);
 
         var empty = deck is null || deck.Count == 0;
         _welcome.IsVisible = empty;
@@ -899,176 +967,164 @@ public sealed class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// A key: typed into whatever text box has the focus, taken by whatever is open over the
+    /// stage, or read against the key map and run as a command.
+    /// </summary>
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_chat.IsTyping)
+        // Typing is typing: in any box, a key is a character, not a command.
+        if (FocusManager?.GetFocusedElement() is TextBox)
         {
             return;
         }
 
-        // The enlarged picture and the settings panel are over everything, so they take Escape
-        // before anything underneath does.
-        if (_inspector.IsVisible)
+        // What is open over the stage takes its own keys first.
+        if (_inspector.IsVisible || _help.IsVisible || _preferences.IsVisible)
         {
-            if (e.Key is Key.Escape)
+            if (e.Key is Key.Escape or Key.Q || (_preferences.IsVisible && e.Key == Key.OemComma) || (_help.IsVisible && e.Key == Key.Oem2))
             {
-                _inspector.Close();
+                Escape();
                 e.Handled = true;
             }
 
             return;
         }
 
-
-        if (_preferences.IsVisible)
-        {
-            if (e.Key is Key.Escape or Key.OemComma)
-            {
-                ShowSettings(false);
-                e.Handled = true;
-            }
-
-            return;
-        }
-
-        // The sessions list takes the arrow keys and Enter while it is open.
+        // The sessions list, while it is open, is walked with j and k or the arrows.
         if (_sessions.Handle(e.Key))
         {
             e.Handled = true;
             return;
         }
 
-        switch (e.Key)
+        if (AvaloniaChords.From(e) is not { } chord)
         {
-            case Key.Right or Key.PageDown:
-                _controller.Next();
-                break;
-
-            case Key.Left or Key.PageUp:
-                _controller.Previous();
-                break;
-
-            // Up and down walk the current slide's parts (a diagram's steps, an image's
-            // callouts); on a slide without parts they move between slides.
-            case Key.Down:
-                if (!_controller.Step(+1))
-                {
-                    _controller.Next();
-                }
-
-                break;
-
-            case Key.Up:
-                if (!_controller.Step(-1))
-                {
-                    _controller.Previous();
-                }
-
-                break;
-
-            case Key.OemPlus or Key.Add:
-                _stage.ZoomAt(new Point(_stage.Bounds.Width / 2, _stage.Bounds.Height / 2), 0.8);
-                break;
-
-            case Key.OemMinus or Key.Subtract:
-                _stage.ZoomAt(new Point(_stage.Bounds.Width / 2, _stage.Bounds.Height / 2), 1.25);
-                break;
-
-            case Key.D0 or Key.NumPad0:
-                _controller.Reframe();
-                break;
-
-            case Key.Home:
-                _controller.First();
-                break;
-
-            case Key.End:
-                _controller.Last();
-                break;
-
-            case Key.O:
-                _controller.ToggleOverview();
-                break;
-
-            case Key.T:
-                _chat.Collapse(!_chat.Collapsed);
-                _stage.Focus();
-                break;
-
-            case Key.L:
-                _sessions.Collapse(!_sessions.Collapsed);
-                if (!_sessions.Collapsed)
-                {
-                    ListSessions();
-                }
-
-                break;
-
-            case Key.Escape when _controller.IsOverview:
-                _controller.ToggleOverview();
-                break;
-
-            case Key.Escape when _controller.State.Focus is not null:
-                _controller.Focus(null, null);
-                break;
-
-            case Key.Escape when WindowState == WindowState.FullScreen:
-                WindowState = WindowState.Normal;
-                break;
-
-            case Key.Enter or Key.OemQuestion or Key.Divide:
-                _chat.FocusInput();
-                break;
-
-            case Key.Escape when _agent?.IsWorking == true:
-                StopAgent();
-                break;
-
-            case Key.Escape when _chat.Collapsed:
-                _chat.Collapse(false);
-                break;
-
-            case Key.F11 or Key.F:
-                WindowState = WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
-                break;
-
-            case Key.Space:
-                _narrator.Play(_controller.CurrentSlide);
-                UpdateHud();
-                break;
-
-            // The presentation stops where it is: no voice, and no slide moves on by itself.
-            case Key.X:
-                _narrator.Hold();
-                UpdateHud();
-                break;
-
-            case Key.M:
-                ToggleMute();
-                break;
-
-            case Key.S:
-                _narrator.ToggleSubtitles();
-                break;
-
-            // Keep going through the deck, or stop at the end of this slide.
-            case Key.C:
-                _narrator.SetContinuous(!_narrator.Continuous);
-                break;
-
-            case Key.N:
-                NewSession();
-                break;
-
-            case Key.OemComma:
-                ShowSettings(true);
-                break;
-
-            default:
-                return;
+            return;
         }
 
-        e.Handled = true;
+        var (taken, command, count) = _keyReader.Feed(chord);
+        ShowPendingKeys();
+
+        if (command is not null)
+        {
+            Execute(command, count);
+        }
+
+        if (taken)
+        {
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>What has been typed towards a command, and the ways it could finish, in the title bar.</summary>
+    private void ShowPendingKeys()
+    {
+        var pending = _keyReader.Pending;
+        if (pending.Length == 0)
+        {
+            _titleBar.SetPendingKeys(null);
+            return;
+        }
+
+        var ways = _keyMap.Continuations(Chord.Parse(pending.TrimStart('0', '1', '2', '3', '4', '5', '6', '7', '8', '9') is { Length: > 0 } keys ? keys : " "))
+            .Take(5)
+            .Select(c => $"{c.Keys} {c.Command}");
+        _titleBar.SetPendingKeys(pending + "   " + string.Join("  ·  ", ways));
+    }
+
+    /// <summary>Runs a command line, showing what it had to say or why it could not.</summary>
+    private void Execute(string line, int? count = null)
+    {
+        try
+        {
+            if (_commands.Run(line, count) is { Length: > 0 } message)
+            {
+                _prompt.ShowMessage(message);
+            }
+        }
+        catch (CommandException ex)
+        {
+            _prompt.ShowMessage(ex.Message, error: true);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or KeyNotFoundException
+            or FormatException or ArgumentException or UnauthorizedAccessException)
+        {
+            _prompt.ShowMessage(ex.Message, error: true);
+        }
+
+        UpdateHud();
+    }
+
+    /// <summary>Back out of the innermost thing: whatever is open, then overview, focus, the agent, fullscreen.</summary>
+    private void Escape()
+    {
+        _keyReader.Reset();
+        ShowPendingKeys();
+
+        if (_inspector.IsVisible)
+        {
+            _inspector.Close();
+        }
+        else if (_help.IsVisible)
+        {
+            _help.IsVisible = false;
+        }
+        else if (_preferences.IsVisible)
+        {
+            ShowSettings(false);
+        }
+        else if (_prompt.IsOpen)
+        {
+            _prompt.Close();
+        }
+        else if (_controller.IsOverview)
+        {
+            _controller.ToggleOverview();
+        }
+        else if (_controller.State.Focus is not null)
+        {
+            _controller.Focus(null, null);
+        }
+        else if (_agent?.IsWorking == true)
+        {
+            StopAgent();
+        }
+        else if (WindowState == WindowState.FullScreen)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        _stage.Focus();
+    }
+
+    /// <summary>
+    /// Somewhere to say something to the agent: the conversation's own box when it is open,
+    /// the bar at the foot of the stage when it is folded away.
+    /// </summary>
+    private void Talk(string? about = null)
+    {
+        if (!_chat.Collapsed)
+        {
+            if (about is not null)
+            {
+                _chat.SetContext(about);
+            }
+
+            _chat.FocusInput();
+            return;
+        }
+
+        _prompt.SetContext(about);
+        _prompt.Open(PromptMode.Talk);
+        _prompt.SetContext(about);
+    }
+
+    /// <summary>Something said from the bar or with <c>:ask</c>: into the transcript, then to the agent.</summary>
+    private void Say(string text)
+    {
+        _chat.AddMessage(fromUser: true, _asking is { } subject ? $"About {subject.Label}: {text}" : text);
+        OnChat(text);
     }
 
     private void BringForward()

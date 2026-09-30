@@ -73,7 +73,7 @@ public sealed class McpTests : IDisposable
         Assert.Contains("[[focus", init["result"]!["instructions"]!.GetValue<string>(), StringComparison.Ordinal);
 
         var list = await connection.RequestAsync("tools/list", []);
-        Assert.Equal(20, list["result"]!["tools"]!.AsArray().Count);
+        Assert.Equal(22, list["result"]!["tools"]!.AsArray().Count);
 
         var call = await connection.RequestAsync("tools/call", new JsonObject
         {
@@ -218,6 +218,30 @@ public sealed class McpTests : IDisposable
             "describe_deck", JsonNode.Parse("""{"id":"the-danube"}""")!.AsObject(), CancellationToken.None));
 
         Assert.Contains("last-week", missing.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The agent files sessions the way a person does in the list: by group, not one at a time.</summary>
+    [Fact]
+    public async Task TheAgentCanFileSessionsIntoGroupsAndRenameThem()
+    {
+        _decks.New("The knee");
+        _decks.New("The elbow");
+        _decks.New("Roman roads");
+        _decks.Flush();
+
+        var filed = await _tools.CallAsync(
+            "group_decks", JsonNode.Parse("""{"decks":["the-knee","the-elbow"],"group":"Anatomy"}""")!.AsObject(), CancellationToken.None);
+        Assert.False(filed.IsError, filed.Text);
+
+        var listed = await _tools.CallAsync("list_decks", [], CancellationToken.None);
+        Assert.Contains("\"group\":\"Anatomy\"", listed.Text, StringComparison.Ordinal);
+
+        await _tools.CallAsync("rename_group", JsonNode.Parse("""{"from":"Anatomy","to":"The body"}""")!.AsObject(), CancellationToken.None);
+        Assert.Equal(["The body", "The body"], _decks.Store.List().Where(d => d.Group is not null).Select(d => d.Group));
+
+        var nowhere = await Assert.ThrowsAsync<ToolInputException>(() => _tools.CallAsync(
+            "group_decks", JsonNode.Parse("""{"decks":["the-shin"],"group":"Anatomy"}""")!.AsObject(), CancellationToken.None));
+        Assert.Contains("roman-roads", nowhere.Message, StringComparison.Ordinal);
     }
 
     [Fact]

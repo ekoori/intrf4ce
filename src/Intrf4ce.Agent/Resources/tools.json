@@ -280,6 +280,30 @@
       }
     },
     {
+      "name": "group_decks",
+      "description": "File saved presentations under a group in the user's sessions list, or take them out of one. When the user asks for their sessions to be organised, read them with list_decks (and describe_deck where a title is not enough), then group them by subject — a handful of groups with plain names, not one per session.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["decks"],
+        "properties": {
+          "decks": { "type": "array", "items": { "type": "string" }, "description": "Presentation ids, from list_decks." },
+          "group": { "type": "string", "description": "The group's name, e.g. 'Anatomy'. Omit or leave empty to take them out of any group." }
+        }
+      }
+    },
+    {
+      "name": "rename_group",
+      "description": "Rename a group in the sessions list; every presentation in it moves with it.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["from", "to"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" }
+        }
+      }
+    },
+    {
       "name": "describe_deck",
       "description": "Look inside another saved presentation without opening it or disturbing the one on the stage: its slides, and the conversation that built it. For when the user refers to something you did in an earlier session.",
       "inputSchema": {

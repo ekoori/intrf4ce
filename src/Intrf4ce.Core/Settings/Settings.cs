@@ -29,6 +29,23 @@ public sealed class AppSettings
     public StageSettings Stage { get; set; } = new();
 
     public LibrarySettings Library { get; set; } = new();
+
+    /// <summary>
+    /// The user's own key bindings, over the ones intrf4ce ships: keys to a command, as typed
+    /// after <c>:</c>. An empty command takes a default binding away.
+    /// </summary>
+    /// <remarks>
+    /// Keys are written as in Fjord and vim — <c>gg</c>, <c>G</c>, <c>&lt;Ctrl+d&gt;</c>,
+    /// <c>&lt;Space&gt;</c> — and quoted in the file, since several of them mean something
+    /// to YAML. <c>?</c> or <c>:help</c> lists every command and where it is bound.
+    /// </remarks>
+    public Dictionary<string, string> Keys
+    {
+        get => _keys;
+        set => _keys = value ?? new Dictionary<string, string>(StringComparer.Ordinal);
+    }
+
+    private Dictionary<string, string> _keys = new(StringComparer.Ordinal);
 }
 
 public sealed class NarrationSettings
@@ -339,6 +356,7 @@ public static class SettingsFile
         }
 
         live.Library.CopyMedia = loaded.Library.CopyMedia;
+        live.Keys = new Dictionary<string, string>(loaded.Keys, StringComparer.Ordinal);
 
         return later;
     }
@@ -476,6 +494,79 @@ public static class SettingsFile
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// Puts a command on keys in the <c>keys:</c> section, or with an empty command takes the
+    /// keys' default away; the rest of the file is left as it was.
+    /// </summary>
+    /// <returns>An error in words, or null when it was written.</returns>
+    public static string? WriteBinding(string path, string keys, string command)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentException.ThrowIfNullOrEmpty(keys);
+        ArgumentNullException.ThrowIfNull(command);
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var text = File.Exists(path) ? File.ReadAllText(path) : DefaultText;
+            File.WriteAllText(path, Bind(text, keys, command));
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"settings.yaml could not be written: {ex.Message}";
+        }
+    }
+
+    /// <summary>The same edit on the text: the binding's line replaced, or added to the section.</summary>
+    public static string Bind(string text, string keys, string command)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        // Always quoted: ":", "`" and "<" all mean something to YAML at the start of a key.
+        var key = "\"" + keys.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+        var entry = $"  {key}: {Quote(command)}";
+        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
+
+        var start = lines.FindIndex(l => l.StartsWith("keys:", StringComparison.Ordinal));
+        if (start < 0)
+        {
+            var at = lines.Count > 0 && lines[^1].Trim().Length == 0 ? lines.Count - 1 : lines.Count;
+            if (at > 0 && lines[at - 1].Trim().Length > 0)
+            {
+                lines.Insert(at++, "");
+            }
+
+            lines.Insert(at++, "keys:");
+            lines.Insert(at, entry);
+            return string.Join("\n", lines);
+        }
+
+        var end = start + 1;
+        while (end < lines.Count && (lines[end].Trim().Length == 0 || char.IsWhiteSpace(lines[end][0])))
+        {
+            end++;
+        }
+
+        for (var i = start + 1; i < end; i++)
+        {
+            if (lines[i].TrimStart().StartsWith(key + ":", StringComparison.Ordinal))
+            {
+                lines[i] = entry;
+                return string.Join("\n", lines);
+            }
+        }
+
+        var last = end;
+        while (last > start + 1 && lines[last - 1].Trim().Length == 0)
+        {
+            last--;
+        }
+
+        lines.Insert(last, entry);
+        return string.Join("\n", lines);
     }
 
     /// <summary>Quotes a value only where YAML would otherwise read it as something else.</summary>
@@ -616,6 +707,11 @@ public static class SettingsFile
         stage:
           animation_speed: 1.0    # 0 turns animation off
           follow_agent: false     # jump to each new slide as the agent adds it
+
+        keys:                     # your own key bindings over the defaults: ? or :help lists them.
+                                  # Keys as in vim: gg, G, <Ctrl+d>, <Space>. "" takes a key away.
+          # "gt": next
+          # "<Ctrl+d>": next 5
 
         library:
           folder: ""              # where sessions live; empty for "sessions" beside intrf4ce

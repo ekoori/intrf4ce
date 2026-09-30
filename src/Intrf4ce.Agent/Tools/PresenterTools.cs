@@ -61,6 +61,8 @@ public sealed class PresenterTools : IToolDispatcher
             ["get_settings"] = (_, _, _) => Task.FromResult(GetSettings()),
             ["set_setting"] = (a, _, _) => Task.FromResult(SetSetting(a)),
             ["describe_deck"] = (a, _, _) => Task.FromResult(DescribeDeck(a)),
+            ["group_decks"] = (a, _, _) => Task.FromResult(GroupDecks(a)),
+            ["rename_group"] = (a, _, _) => Task.FromResult(RenameGroup(a)),
         };
     }
 
@@ -128,6 +130,7 @@ public sealed class PresenterTools : IToolDispatcher
                 id = d.Id,
                 title = d.Title,
                 about = d.Subject,
+                group = d.Group,
                 slides = d.Slides,
                 modified = d.Modified.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
             }),
@@ -173,6 +176,49 @@ public sealed class PresenterTools : IToolDispatcher
                 ? "this is the presentation on the stage"
                 : "not open; open_deck puts it on the stage, which takes the current one off",
         });
+    }
+
+    private ToolResult GroupDecks(JsonObject arguments)
+    {
+        if (arguments["decks"] is not JsonArray list || list.Count == 0)
+        {
+            throw new ToolInputException("decks is required: the ids of the presentations to file, from list_decks");
+        }
+
+        var group = OptionalString(arguments, "group");
+        var known = _decks.Store.List().Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
+        var ids = list.Select(d => d?.GetValue<string>() ?? "").ToList();
+        var missing = ids.Where(id => !known.Contains(id)).ToList();
+        if (missing.Count > 0)
+        {
+            throw new ToolInputException($"no presentation {string.Join(", ", missing)} (there are: {string.Join(", ", known.Order(StringComparer.Ordinal))})");
+        }
+
+        foreach (var id in ids)
+        {
+            _decks.SetGroup(id, group);
+        }
+
+        return ToolResult.Json(new
+        {
+            filed = ids,
+            group = string.IsNullOrWhiteSpace(group) ? null : group.Trim(),
+            groups = _decks.Store.List().Where(d => d.Group is not null).GroupBy(d => d.Group).Select(g => new { name = g.Key, sessions = g.Count() }),
+        });
+    }
+
+    private ToolResult RenameGroup(JsonObject arguments)
+    {
+        var from = RequireString(arguments, "from");
+        var to = RequireString(arguments, "to");
+        var moved = _decks.RenameGroup(from, to);
+        if (moved == 0)
+        {
+            var groups = _decks.Store.List().Select(d => d.Group).OfType<string>().Distinct().ToList();
+            throw new ToolInputException($"there is no group '{from}' (groups: {(groups.Count == 0 ? "none yet" : string.Join(", ", groups))})");
+        }
+
+        return ToolResult.Json(new { renamed = from, to = to.Trim(), sessions = moved });
     }
 
     /// <summary>A slide in a line: what it shows, and the start of what is said over it.</summary>

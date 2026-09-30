@@ -53,6 +53,15 @@ public sealed record Deck
     public string? AgentSession { get; init; }
 
     /// <summary>
+    /// The group it is filed under in the sessions list; null for none.
+    /// </summary>
+    /// <remarks>
+    /// Kept in the deck itself, so a session copied elsewhere keeps its filing, and a group is
+    /// simply the set of sessions that name it — there is no separate list to fall out of step.
+    /// </remarks>
+    public string? Group { get; init; }
+
+    /// <summary>
     /// What was said while this presentation was built, kept with it.
     /// </summary>
     /// <remarks>
@@ -100,5 +109,6 @@ public sealed record Deck
 
 /// <summary>What the library lists without loading every deck.</summary>
 /// <param name="Subject">The first slide's title: what the presentation is about, in its own words.</param>
+/// <param name="Group">Which group it is filed under, if any.</param>
 public sealed record DeckInfo(
-    string Id, string Title, int Slides, DateTimeOffset Modified, string Folder, string? Subject = null);
+    string Id, string Title, int Slides, DateTimeOffset Modified, string Folder, string? Subject = null, string? Group = null);

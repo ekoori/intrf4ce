@@ -31,6 +31,7 @@ internal static class Glyph
     public const string Gear = "M 8,5 A 3,3 0 1 0 8,11 A 3,3 0 1 0 8,5 Z M 7,0.6 H 9 L 9.3,2.6 L 10.9,3.3 L 12.5,2.1 L 13.9,3.5 L 12.7,5.1 L 13.4,6.7 L 15.4,7 V 9 L 13.4,9.3 L 12.7,10.9 L 13.9,12.5 L 12.5,13.9 L 10.9,12.7 L 9.3,13.4 L 9,15.4 H 7 L 6.7,13.4 L 5.1,12.7 L 3.5,13.9 L 2.1,12.5 L 3.3,10.9 L 2.6,9.3 L 0.6,9 V 7 L 2.6,6.7 L 3.3,5.1 L 2.1,3.5 L 3.5,2.1 L 5.1,3.3 L 6.7,2.6 Z";
     public const string Plus = "M 7,1 H 9 V 7 H 15 V 9 H 9 V 15 H 7 V 9 H 1 V 7 H 7 Z";
     public const string StopSquare = "M 3,3 H 13 V 13 H 3 Z";
+    public const string Chat = "M 2,2.5 H 14 V 10.5 H 7.5 L 4,13.8 V 10.5 H 2 Z";
     public const string Lines = "M 0,1 H 14 V 3 H 0 Z M 0,6 H 14 V 8 H 0 Z M 0,11 H 14 V 13 H 0 Z";
 }
 
@@ -52,7 +53,7 @@ public sealed class IconButton : Border
     private bool _pressed;
     private bool _lit = true;
 
-    public IconButton(Skin skin, string icon, string tooltip, Action click, bool accent = false, double size = 38)
+    public IconButton(Skin skin, string icon, string tooltip, Action click, bool accent = false, double size = Metrics.Button)
     {
         ArgumentNullException.ThrowIfNull(skin);
         ArgumentNullException.ThrowIfNull(click);

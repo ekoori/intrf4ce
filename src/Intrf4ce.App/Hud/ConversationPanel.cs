@@ -37,13 +37,33 @@ public sealed class ConversationPanel : Border
     private readonly IconButton _stop;
     private readonly DockPanel _header;
     private readonly Border _box;
+    private readonly DockPanel _full;
+    private readonly DockPanel _strip;
+    private readonly Panel _stripTop;
     private string _placeholder = "Ask for anything to be explained…";
     private double _preferred = 420;
 
     public ConversationPanel(Skin theme)
     {
         _theme = theme;
-        Orb = new AgentOrb(theme) { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        Orb = new AgentOrb(theme)
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+            Cursor = new Cursor(StandardCursorType.Hand),
+        };
+
+        // The orb is the panel's handle: it says what the agent is doing, and a click on it
+        // folds the conversation away or brings it back.
+        Orb.SetValue(ToolTip.TipProperty, "Fold the conversation away, or bring it back (p)");
+        Orb.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(Orb).Properties.IsLeftButtonPressed)
+            {
+                Collapse(!Collapsed);
+                e.Handled = true;
+            }
+        };
 
         Width = 420;
         Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x12, 0x18));
@@ -62,7 +82,7 @@ public sealed class ConversationPanel : Border
 
         _hint = new TextBlock
         {
-            Text = "T",
+            Text = "p",
             Foreground = theme.Brush(theme.Faint),
             FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
@@ -164,12 +184,15 @@ public sealed class ConversationPanel : Border
             CaretBrush = theme.Brush(theme.Accent),
             VerticalContentAlignment = VerticalAlignment.Center,
             Padding = new Thickness(12, 11),
-            AcceptsReturn = false,
+            AcceptsReturn = true,
+            MaxHeight = 180,
             TextWrapping = TextWrapping.Wrap,
             MaxLength = 4000,
         };
 
-        _input.KeyDown += OnInputKey;
+        // Tunnelled, so Enter is seen before the box makes it a new line: Enter sends,
+        // Shift+Enter is the new line.
+        _input.AddHandler(KeyDownEvent, OnInputKey, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // Fluent paints a focused box black with an accent border; the frame around it is the
         // visible part here, so the box itself stays invisible in every state.
@@ -210,26 +233,38 @@ public sealed class ConversationPanel : Border
             Child = row,
         };
 
-        var layout = new DockPanel();
+        _full = new DockPanel();
         DockPanel.SetDock(_header, Dock.Top);
         DockPanel.SetDock(_box, Dock.Bottom);
         DockPanel.SetDock(_context, Dock.Bottom);
-        layout.Children.Add(_header);
-        layout.Children.Add(_box);
-        layout.Children.Add(_context);
-        layout.Children.Add(_scroller);
-        Child = layout;
+        _full.Children.Add(_header);
+        _full.Children.Add(_box);
+        _full.Children.Add(_context);
+        _full.Children.Add(_scroller);
 
-        // Collapsed, the strip is still a way back in.
-        PointerPressed += (_, e) =>
+        // Folded: the orb at the top, and at the bottom — level with the stage's own buttons —
+        // a way to say something without unfolding anything.
+        _stripTop = new Panel { Margin = new Thickness(0, 12, 0, 0), HorizontalAlignment = HorizontalAlignment.Center, Height = Metrics.Button };
+        var talk = new IconButton(theme, Glyph.Chat, "Say something to the agent (`)", () => TalkRequested?.Invoke(this, EventArgs.Empty))
         {
-            if (Collapsed)
-            {
-                Collapse(false);
-                e.Handled = true;
-            }
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, Metrics.BottomInset),
         };
+
+        _strip = new DockPanel { IsVisible = false };
+        DockPanel.SetDock(_stripTop, Dock.Top);
+        DockPanel.SetDock(talk, Dock.Bottom);
+        _strip.Children.Add(_stripTop);
+        _strip.Children.Add(talk);
+        _strip.Children.Add(new Panel());
+
+        Child = new Panel { Children = { _full, _strip } };
     }
+
+    /// <summary>The icon at the foot of the folded strip: open the input at the bottom of the stage.</summary>
+    public event EventHandler? TalkRequested;
+
+    public event EventHandler? CollapsedChanged;
 
     /// <summary>Whether the panel is a strip holding only the orb.</summary>
     public bool Collapsed { get; private set; }
@@ -241,19 +276,37 @@ public sealed class ConversationPanel : Border
     /// </summary>
     public void Collapse(bool collapsed)
     {
-        Collapsed = collapsed;
-        Width = collapsed ? 54 : _preferred;
-        Cursor = new Cursor(collapsed ? StandardCursorType.Hand : StandardCursorType.Arrow);
+        if (Collapsed == collapsed && (_full.IsVisible != collapsed))
+        {
+            return;
+        }
 
-        _scroller.IsVisible = !collapsed;
-        _box.IsVisible = !collapsed;
-        _status.IsVisible = !collapsed;
-        _hint.IsVisible = !collapsed && !_stop.IsVisible;
-        _stop.IsVisible = _stop.IsVisible && !collapsed;
-        _context.IsVisible = _context.IsVisible && !collapsed;
-        _header.Margin = collapsed ? new Thickness(0, 16, 0, 12) : new Thickness(18, 16, 18, 12);
-        Orb.Margin = collapsed ? new Thickness(0) : new Thickness(0, 0, 10, 0);
-        Orb.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+        Collapsed = collapsed;
+        Width = collapsed ? Metrics.Strip : _preferred;
+        _full.IsVisible = !collapsed;
+        _strip.IsVisible = collapsed;
+
+        // One orb, carried between the two faces: centred in the strip, leading the header.
+        if (Orb.Parent is Panel parent)
+        {
+            parent.Children.Remove(Orb);
+        }
+
+        if (collapsed)
+        {
+            Orb.Margin = new Thickness(0);
+            Orb.HorizontalAlignment = HorizontalAlignment.Center;
+            _stripTop.Children.Add(Orb);
+        }
+        else
+        {
+            Orb.Margin = new Thickness(0, 0, 10, 0);
+            Orb.HorizontalAlignment = HorizontalAlignment.Left;
+            DockPanel.SetDock(Orb, Dock.Left);
+            _header.Children.Insert(0, Orb);
+        }
+
+        CollapsedChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>The width it takes when open: a share of the window, decided by the window.</summary>
@@ -415,7 +468,15 @@ public sealed class ConversationPanel : Border
     {
         switch (e.Key)
         {
-            case Key.Enter when !string.IsNullOrWhiteSpace(_input.Text) || HasContext:
+            // Shift+Enter is left to the box, which makes it a new line.
+            case Key.Enter when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                break;
+
+            case Key.Enter when string.IsNullOrWhiteSpace(_input.Text) && !HasContext:
+                e.Handled = true;
+                break;
+
+            case Key.Enter:
                 // A question about something may be just the pointing.
                 var text = string.IsNullOrWhiteSpace(_input.Text) ? "Tell me more about this." : _input.Text.Trim();
                 _input.Text = "";

@@ -41,9 +41,11 @@ public sealed class TransportBar : Border
 
         HorizontalAlignment = HorizontalAlignment.Left;
         VerticalAlignment = VerticalAlignment.Bottom;
-        Margin = new Thickness(20, 0, 0, 20);
-        Padding = new Thickness(6);
-        CornerRadius = new CornerRadius(25);
+        // Level with the strips' own buttons: every button along the bottom of the window
+        // is the same size and sits on the same line.
+        Margin = new Thickness(16, 0, 0, Metrics.BottomInset - Metrics.PillPadding);
+        Padding = new Thickness(Metrics.PillPadding);
+        CornerRadius = new CornerRadius((Metrics.Button / 2) + Metrics.PillPadding);
 
         // Its own backing, so the buttons and what they say read over any slide behind them.
         Background = new SolidColorBrush(Color.FromArgb(150, 0x08, 0x0C, 0x11));
@@ -150,9 +152,9 @@ public sealed class TransportBar : Border
 
         var shell = new Border
         {
-            Height = 38,
+            Height = Metrics.Button,
             Padding = new Thickness(8, 0, 12, 0),
-            CornerRadius = new CornerRadius(19),
+            CornerRadius = new CornerRadius(Metrics.Button / 2),
             BorderThickness = new Thickness(1),
             BorderBrush = _skin.Brush(_skin.Line),
             Background = _skin.Brush(_skin.Surface2, 0.85),
