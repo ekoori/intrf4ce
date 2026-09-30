@@ -169,8 +169,11 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
         Start(session);
     }
 
-    /// <summary>Whether there is a turn in flight to stop.</summary>
-    public bool IsWorking => (Status is AgentStatus.Working or AgentStatus.Starting) && IsRunning;
+    /// <summary>
+    /// Whether there is a turn in flight to stop. Not while the process is merely starting:
+    /// nothing has been asked yet, and a stop button with nothing to stop is noise.
+    /// </summary>
+    public bool IsWorking => Status is AgentStatus.Working && IsRunning;
 
     /// <summary>
     /// Stops the turn in flight, leaving the conversation intact.
