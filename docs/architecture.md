@@ -109,7 +109,7 @@ not built yet is waited for rather than skipped.
 
 Three columns: the sessions on disk, the stage, and the conversation. The chat used to float over
 the bottom of the stage, which meant the agent's answer covered the slide it was about; now it has
-a column of its own, holds every message rather than fading them, and collapses with `T` to a
+a column of its own, holds every message rather than fading them, and collapses with `p` to a
 strip holding the agent orb — still visible, still a way back in — while the stage takes the
 window. The sessions column collapses the same way once something is on the stage, keeping the
 settings within reach at its foot.
@@ -124,6 +124,16 @@ Settings are a panel over the stage. Each control writes one line of `settings.y
 watcher apply it, so there is one way settings change, whoever changes them — the panel, a text
 editor, or the agent's `set_setting`. The list of what can be changed lives in `SettingsSchema`,
 which is what the panel draws and what the agent's tool will accept.
+
+## Keys and commands
+
+Everything the app does is a command: a method carrying `[Command]`, found by reflection, so
+`:help`, completion and the key map all read the one list and cannot disagree with it. A key
+runs a command line — `next`, `go 3`, `set subtitles!` — through a `KeyMap` of shipped
+defaults with the user's `keys:` from settings.yaml layered over them, and a `KeyReader` that
+turns presses into sequences (`gg`), counts (`3l`) and a pause that forgets a stray key. The
+notation is Fjord's; the code is intrf4ce's own, since Fjord's key layer is a port of
+qutebrowser's and that is GPL-3.0.
 
 ## Events back to the agent
 

@@ -333,6 +333,15 @@ is `img-2031`) so the validator can check a cue before anything is drawn.
   over any part of it can be asked about, and the question carries the box in the picture's own
   coordinates — the ones callouts are already written in.
 
+- **Keyboard first.** Every action a `:` command, every key a binding to one, vim's keys where
+  vim has them, bindings in settings.yaml. Fjord's notation and behaviour, written fresh — Fjord's
+  key layer derives from qutebrowser (GPL-3.0) and intrf4ce is MIT.
+- **Canvases.** A slide may be several slides big; the agent draws on one surface across a
+  conversation instead of adding slides, when the subject is one big picture.
+- **Spending nothing by accident.** ElevenLabs v3 by default; a recording, once made, is kept
+  whatever the voice settings become; muted sends nothing to a voice at all.
+- **Groups** in the sessions list, by drag and drop, by command, or by the agent.
+
 ### Asked for, not yet built
 
 Not in v1 (YAGNI until asked): video, embedded live web pages, a native "exploded layers"
