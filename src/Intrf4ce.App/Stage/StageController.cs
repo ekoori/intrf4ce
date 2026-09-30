@@ -110,7 +110,7 @@ public sealed class StageController : IStage
         _overview = false;
         _focus = null;
         CurrentView?.Reset();
-        _stage.FlyTo(StageView.SlideRect(index), animate);
+        _stage.FlyTo(_stage.SlideRect(index), animate);
 
         if (changed)
         {
@@ -144,11 +144,11 @@ public sealed class StageController : IStage
         ClearFocusMarks();
         if (_overview)
         {
-            _stage.FlyTo(StageView.DeckRect(_deck.Count), margin: 0.06);
+            _stage.FlyTo(_stage.DeckRect(_deck.Count), margin: 0.06);
         }
         else
         {
-            _stage.FlyTo(StageView.SlideRect(Math.Max(0, _current)));
+            _stage.FlyTo(_stage.SlideRect(Math.Max(0, _current)));
         }
 
         Publish();
@@ -159,13 +159,13 @@ public sealed class StageController : IStage
     {
         if (_overview)
         {
-            _stage.FlyTo(StageView.DeckRect(_deck?.Count ?? 0), margin: 0.06);
+            _stage.FlyTo(_stage.DeckRect(_deck?.Count ?? 0), margin: 0.06);
         }
         else if (_current >= 0)
         {
             ClearFocusMarks();
             _focus = null;
-            _stage.FlyTo(StageView.SlideRect(_current));
+            _stage.FlyTo(_stage.SlideRect(_current));
             Publish();
         }
     }
@@ -281,7 +281,7 @@ public sealed class StageController : IStage
             return null;
         }
 
-        var origin = StageView.SlideRect(_current).Position;
+        var origin = _stage.SlideRect(_current).Position;
         foreach (var element in slide.Elements.Where(e => e.IsVisible).Reverse())
         {
             var local = new Point(world.X - origin.X - element.Bounds.X, world.Y - origin.Y - element.Bounds.Y);
@@ -298,7 +298,7 @@ public sealed class StageController : IStage
     {
         for (var i = 0; i < (_deck?.Count ?? 0); i++)
         {
-            if (StageView.SlideRect(i).Contains(world))
+            if (_stage.SlideRect(i).Contains(world))
             {
                 return i;
             }
@@ -322,7 +322,7 @@ public sealed class StageController : IStage
         {
             _focus = null;
             ClearFocusMarks();
-            _stage.FlyTo(StageView.SlideRect(_current), animate);
+            _stage.FlyTo(_stage.SlideRect(_current), animate);
             Publish();
             return null;
         }
@@ -352,7 +352,7 @@ public sealed class StageController : IStage
             : new Rect(element.Bounds.Size);
 
         _focus = target;
-        var origin = StageView.SlideRect(_current).Position + element.Bounds.Position;
+        var origin = _stage.SlideRect(_current).Position + element.Bounds.Position;
         var world = new Rect(origin + local.Position, local.Size);
 
         // The spotlight lights the part itself (and a callout's label), not the whole framing.
@@ -482,7 +482,8 @@ public sealed class StageController : IStage
         if (slideId is not null && _views.TryGetValue(slideId, out var slide))
         {
             target = slide;
-            size = new Size(SlideLayout.Width, SlideLayout.Height);
+            var (w, h) = SlideLayout.SizeOf(slide.Slide);
+            size = new Size(w, h);
         }
         else
         {
@@ -541,7 +542,7 @@ public sealed class StageController : IStage
 
                 PlaceAll();
                 _current = deck.Count > 0 ? 0 : -1;
-                _stage.FlyTo(StageView.SlideRect(Math.Max(0, _current)), animate: false);
+                _stage.FlyTo(_stage.SlideRect(Math.Max(0, _current)), animate: false);
                 CurrentChanged?.Invoke(this, new ShownSlide(CurrentSlide, true));
                 break;
 
@@ -603,7 +604,7 @@ public sealed class StageController : IStage
                 if (currentId is not null)
                 {
                     _current = deck.IndexOf(currentId);
-                    _stage.FlyTo(StageView.SlideRect(_current));
+                    _stage.FlyTo(_stage.SlideRect(_current));
                 }
 
                 break;
@@ -657,11 +658,11 @@ public sealed class StageController : IStage
 
         if (!_overview && _focus is null)
         {
-            _stage.FlyTo(StageView.SlideRect(_current), animate: false);
+            _stage.FlyTo(_stage.SlideRect(_current), animate: false);
         }
         else if (_overview)
         {
-            _stage.FlyTo(StageView.DeckRect(e.Deck.Count), margin: 0.06);
+            _stage.FlyTo(_stage.DeckRect(e.Deck.Count), margin: 0.06);
         }
     }
 
@@ -679,14 +680,18 @@ public sealed class StageController : IStage
     {
         if (_deck is null)
         {
+            _stage.Layout = WorldLayout.Standard(0);
             return;
         }
+
+        // Every slide's size, so a canvas gets the room it needs and nothing overlaps it.
+        _stage.Layout = new WorldLayout([.. _deck.Slides.Select(SlideLayout.SizeOf)]);
 
         for (var i = 0; i < _deck.Count; i++)
         {
             if (_views.TryGetValue(_deck.Slides[i].Id, out var view))
             {
-                StageView.Place(view, i);
+                _stage.Place(view, i);
             }
         }
     }

@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Intrf4ce.Agent.Mcp;
 using Intrf4ce.Core.Decks;
 using Intrf4ce.Core.Events;
+using Intrf4ce.Core.Layout;
 using Intrf4ce.Core.Model;
 using Intrf4ce.Core.Narration;
 using Intrf4ce.Core.Settings;
@@ -106,6 +107,7 @@ public sealed class PresenterTools : IToolDispatcher
                     id = s.Id,
                     title = s.Title,
                     elements = s.Elements.Select(e => $"{e.Id} ({e.TypeName})"),
+                    size = SlideLayout.IsCanvas(s) ? SlideLayout.SizeOf(s) is var (w, h) ? new[] { w, h } : null : null,
                     narrated = !string.IsNullOrWhiteSpace(s.Narration),
                     played = deck.Spoken.Contains(s.Id),
                 }),
@@ -301,6 +303,11 @@ public sealed class PresenterTools : IToolDispatcher
             updated = updated with { Layout = OptionalString(arguments, "layout") };
         }
 
+        if (arguments["size"] is JsonArray size)
+        {
+            updated = updated with { Size = Deserialize<double[]>(size, "size") };
+        }
+
         if (arguments.ContainsKey("narration"))
         {
             updated = updated with { Narration = OptionalString(arguments, "narration") };
@@ -493,10 +500,16 @@ public sealed class PresenterTools : IToolDispatcher
         var caption = slide is null
             ? $"The stage as the user sees it: slide {state.CurrentIndex + 1} of {_decks.Current?.Count ?? 0}"
                 + (state.Focus is null ? "." : $", focused on {state.Focus}.")
-            : $"Slide '{slide}' rendered on its own at 1600x900 units.";
+            : $"Slide '{slide}' rendered on its own at {Size(slide)} units.";
 
         return ToolResult.Image(png, caption);
     }
+
+    /// <summary>A slide's size as written in a caption: 1600x900, or a canvas's own.</summary>
+    private string Size(string slideId) =>
+        _decks.Current?.Find(slideId) is { } slide && SlideLayout.SizeOf(slide) is var (w, h)
+            ? string.Create(CultureInfo.InvariantCulture, $"{w:0}x{h:0}")
+            : "1600x900";
 
     private async Task<ToolResult> InspectImageAsync(JsonObject arguments, CancellationToken cancellationToken)
     {

@@ -139,6 +139,7 @@ public static partial class SpecValidator
             ValidateElement(element, path, issues);
         }
 
+        ValidateSize(slide, issues);
         ValidateNarration(slide, issues);
         return issues;
     }
@@ -208,6 +209,31 @@ public static partial class SpecValidator
             DiagramElement => null,
             _ => [],
         };
+    }
+
+    private static void ValidateSize(Slide slide, List<SpecIssue> issues)
+    {
+        if (slide.Size is null)
+        {
+            return;
+        }
+
+        if (slide.Size is not [var width, var height] || width <= 0 || height <= 0)
+        {
+            Error(issues, "size", "size is [width, height] in slide units; a slide is [1600, 900]");
+            return;
+        }
+
+        if (width < SlideLayout.MinWidth || height < SlideLayout.MinHeight || width > SlideLayout.MaxWidth || height > SlideLayout.MaxHeight)
+        {
+            Warn(issues, "size",
+                $"[{width:0}, {height:0}] is outside {SlideLayout.MinWidth:0}x{SlideLayout.MinHeight:0} to {SlideLayout.MaxWidth:0}x{SlideLayout.MaxHeight:0}; it is drawn at the nearest size within that");
+        }
+
+        if (SlideLayout.IsCanvas(slide) && SlideLayout.Resolve(slide) != "free" && slide.Elements.Count > 1)
+        {
+            Warn(issues, "layout", "a canvas is laid out best by hand: layout free, with a rect for each element");
+        }
     }
 
     private static void ValidateNarration(Slide slide, List<SpecIssue> issues)

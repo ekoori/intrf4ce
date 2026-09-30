@@ -14,6 +14,16 @@ public sealed record Slide
     /// <summary>full, split, wide, stack, grid or free. Chosen from the elements when left out.</summary>
     public string? Layout { get; init; }
 
+    /// <summary>
+    /// [width, height] in slide units; a slide is 1600 by 900 when left out.
+    /// </summary>
+    /// <remarks>
+    /// Larger is a canvas: one big surface — an architecture, a family tree, a mind map — that
+    /// the conversation keeps adding to rather than a sequence of slides that each replace the
+    /// last. The camera roams it, and focus zooms into its parts, as on any slide.
+    /// </remarks>
+    public double[]? Size { get; init; }
+
     public IReadOnlyList<Element> Elements { get; init; } = [];
 
     /// <summary>What is spoken and subtitled, with <c>[[cue]]</c> markers inline.</summary>

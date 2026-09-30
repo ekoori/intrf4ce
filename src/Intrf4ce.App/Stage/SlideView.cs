@@ -22,7 +22,7 @@ namespace Intrf4ce.App.Stage;
 public sealed class SlideView : Border
 {
     private readonly ElementContext _context;
-    private readonly Canvas _canvas = new() { Width = SlideLayout.Width, Height = SlideLayout.Height };
+    private readonly Canvas _canvas = new();
     private readonly TextBlock _title;
     private readonly Dictionary<string, ElementView> _views = new(StringComparer.Ordinal);
     private Slide _slide;
@@ -34,8 +34,6 @@ public sealed class SlideView : Border
         _slide = slide;
         var theme = context.Skin;
 
-        Width = SlideLayout.Width;
-        Height = SlideLayout.Height;
         CornerRadius = new CornerRadius(22);
         Background = new LinearGradientBrush
         {
@@ -99,6 +97,14 @@ public sealed class SlideView : Border
 
         _title.Text = slide.Title;
         _title.IsVisible = !string.IsNullOrWhiteSpace(slide.Title);
+
+        // A canvas is as big as it says, and may grow as the conversation adds to it.
+        var (width, height) = SlideLayout.SizeOf(slide);
+        Width = width;
+        Height = height;
+        _canvas.Width = width;
+        _canvas.Height = height;
+        _title.MaxWidth = width - (2 * SlideLayout.PaddingX);
 
         var boxes = SlideLayout.Arrange(slide);
         var keep = new HashSet<string>(slide.Elements.Select(e => e.Id), StringComparer.Ordinal);

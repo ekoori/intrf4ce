@@ -22,13 +22,33 @@ public static class SlideLayout
 
     public static readonly IReadOnlyList<string> Kinds = ["full", "split", "wide", "stack", "grid", "free"];
 
+    /// <summary>The smallest and largest a slide may be: half a slide, and six slides by six.</summary>
+    public const double MinWidth = 800;
+    public const double MinHeight = 450;
+    public const double MaxWidth = 9600;
+    public const double MaxHeight = 5400;
+
     public static Box Slide => new(0, 0, Width, Height);
 
-    /// <summary>The part of the slide elements may use, below the title when there is one.</summary>
-    public static Box ContentArea(bool hasTitle)
+    /// <summary>How big a slide is: its own size when it has one, within reason, or the standard 1600 by 900.</summary>
+    public static (double Width, double Height) SizeOf(Slide slide)
+    {
+        ArgumentNullException.ThrowIfNull(slide);
+
+        return slide.Size is [var width, var height] && width > 0 && height > 0
+            ? (Math.Clamp(width, MinWidth, MaxWidth), Math.Clamp(height, MinHeight, MaxHeight))
+            : (Width, Height);
+    }
+
+    /// <summary>Whether a slide is a canvas rather than an ordinary slide.</summary>
+    public static bool IsCanvas(Slide slide) => SizeOf(slide) is var (w, h) && (w > Width || h > Height);
+
+    public static Box ContentArea(bool hasTitle) => ContentArea(hasTitle, Width, Height);
+
+    public static Box ContentArea(bool hasTitle, double width, double height)
     {
         var top = PaddingTop + (hasTitle ? TitleBand : 0);
-        return new Box(PaddingX, top, Width - (2 * PaddingX), Height - top - PaddingBottom);
+        return new Box(PaddingX, top, width - (2 * PaddingX), height - top - PaddingBottom);
     }
 
     /// <summary>The areas an element may name under each layout.</summary>
@@ -76,7 +96,9 @@ public static class SlideLayout
         ArgumentNullException.ThrowIfNull(slide);
 
         var layout = Resolve(slide);
-        var content = ContentArea(!string.IsNullOrWhiteSpace(slide.Title));
+        var (width, height) = SizeOf(slide);
+        var content = ContentArea(!string.IsNullOrWhiteSpace(slide.Title), width, height);
+        var whole = new Box(0, 0, width, height);
         var elements = slide.Elements;
         var result = new Dictionary<string, Box>(StringComparer.Ordinal);
 
@@ -91,7 +113,7 @@ public static class SlideLayout
                 foreach (var element in elements)
                 {
                     result[element.Id] = element.Rect is [var x, var y, var w, var h]
-                        ? Slide.Fraction(x, y, w, h)
+                        ? whole.Fraction(x, y, w, h)
                         : content;
                 }
 

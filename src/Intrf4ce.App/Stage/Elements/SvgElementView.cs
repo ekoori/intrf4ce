@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Intrf4ce.App.Render;
+using Intrf4ce.Core.Layout;
 using Intrf4ce.Core.Model;
 using Intrf4ce.Core.Rendering;
 
@@ -13,6 +14,9 @@ namespace Intrf4ce.App.Stage.Elements;
 public sealed class SvgElementView : ElementView
 {
     private readonly SvgPictureControl _picture = new();
+
+    /// <summary>How far a picture may be enlarged on an ordinary slide, before any extra room is counted.</summary>
+    private double _baseScale = 1.0;
     private TextBlock? _caption;
     private IReadOnlyList<RenderPart> _parts = [];
 
@@ -86,12 +90,13 @@ public sealed class SvgElementView : ElementView
             _ => throw new InvalidOperationException($"{element.TypeName} is not drawn as SVG"),
         };
 
-        _picture.MaxScale = element switch
+        _baseScale = element switch
         {
             DiagramElement => 1.8,
             MathElement => 1.6,
             _ => 1.0,
         };
+        _picture.MaxScale = _baseScale * Roomy(Bounds.Size);
 
         var result = await Context.Renderer.RenderAsync(kind, source, options, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
@@ -149,5 +154,22 @@ public sealed class SvgElementView : ElementView
         }
 
         return trimmed;
+    }
+
+    /// <summary>
+    /// The cap keeps a small diagram from swelling to fill a slide. On a canvas an element may
+    /// be given many slides' worth of room, and there it should use it: the cap grows with how
+    /// much bigger than a slide's content area the element's box is.
+    /// </summary>
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        _picture.MaxScale = _baseScale * Roomy(finalSize);
+        return base.ArrangeOverride(finalSize);
+    }
+
+    private static double Roomy(Size size)
+    {
+        var content = SlideLayout.ContentArea(hasTitle: true);
+        return size.Width <= 0 ? 1 : Math.Max(1, Math.Min(size.Width / content.Width, size.Height / content.Height));
     }
 }

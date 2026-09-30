@@ -79,26 +79,15 @@ public sealed class StageView : Panel
     /// <summary>The user moved the camera by hand (wheel or drag).</summary>
     public event EventHandler? MovedByHand;
 
-    public static Rect SlideRect(int index)
-    {
-        var column = index % Columns;
-        var row = index / Columns;
-        return new Rect(column * (SlideLayout.Width + GapX), row * (SlideLayout.Height + GapY), SlideLayout.Width, SlideLayout.Height);
-    }
+    /// <summary>Where every slide sits; set by the controller whenever the deck changes.</summary>
+    public WorldLayout Layout { get; set; } = WorldLayout.Standard(0);
+
+    public Rect SlideRect(int index) => ToRect(Layout.Rect(index));
 
     /// <summary>The rectangle enclosing the first <paramref name="count"/> slides.</summary>
-    public static Rect DeckRect(int count)
-    {
-        if (count <= 0)
-        {
-            return SlideRect(0);
-        }
+    public Rect DeckRect(int count) => ToRect(Layout.Bounds(count));
 
-        var last = SlideRect(count - 1);
-        var columns = Math.Min(count, Columns);
-        var width = (columns * SlideLayout.Width) + ((columns - 1) * GapX);
-        return new Rect(0, 0, width, last.Bottom);
-    }
+    private static Rect ToRect(Box box) => new(box.X, box.Y, box.Width, box.Height);
 
     public void Add(Control slide) => _world.Children.Add(slide);
 
@@ -107,7 +96,7 @@ public sealed class StageView : Panel
     public void Clear() => _world.Children.Clear();
 
     /// <summary>Moves a slide to its place in the world for <paramref name="index"/>.</summary>
-    public static void Place(Control slide, int index)
+    public void Place(Control slide, int index)
     {
         var rect = SlideRect(index);
         Canvas.SetLeft(slide, rect.X);
@@ -160,7 +149,9 @@ public sealed class StageView : Panel
 
         _path = null;
         var world = ScreenToWorld(screen);
-        var width = Math.Clamp(_view.Width * factor, SlideLayout.Width * 0.06, SlideLayout.Width * Columns * 2.5);
+        // Out far enough to see the whole deck, however big its canvases are.
+        var widest = Math.Max(SlideLayout.Width * Columns * 2.5, Layout.Bounds(Layout.Count).Width * 1.5);
+        var width = Math.Clamp(_view.Width * factor, SlideLayout.Width * 0.06, widest);
         var scale = Bounds.Width / width;
         var center = new Point(
             world.X - ((screen.X - (Bounds.Width / 2)) / scale),
