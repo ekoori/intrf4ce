@@ -35,22 +35,25 @@ public static class Captions
         return result;
     }
 
-    /// <summary>Runs of non-space characters.</summary>
+    /// <summary>Runs of non-space characters; an audio tag is not a word, and is skipped.</summary>
     public static IReadOnlyList<TextSpan> Words(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
+
+        var tag = AudioTags.Mask(text);
+        bool Gap(int at) => char.IsWhiteSpace(text[at]) || tag[at];
 
         var result = new List<TextSpan>();
         var i = 0;
         while (i < text.Length)
         {
-            while (i < text.Length && char.IsWhiteSpace(text[i]))
+            while (i < text.Length && Gap(i))
             {
                 i++;
             }
 
             var start = i;
-            while (i < text.Length && !char.IsWhiteSpace(text[i]))
+            while (i < text.Length && !Gap(i))
             {
                 i++;
             }

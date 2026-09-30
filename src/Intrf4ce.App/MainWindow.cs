@@ -228,7 +228,7 @@ public sealed class MainWindow : Window
             UpdateHud();
         };
 
-        _transport.Mute += (_, _) => _narrator.Mute();
+        _transport.Mute += (_, _) => ToggleMute();
         _transport.Captions += (_, _) => _narrator.ToggleSubtitles();
 
         _preferences.Changed += (_, change) => ApplySetting(change.Key, change.Value);
@@ -490,6 +490,17 @@ public sealed class MainWindow : Window
             + (_narrator.Muted ? ", voice silenced" : "")
             + (_narrator.SubtitlesOn ? "" : ", subtitles off")
             + (_narrator.StopAfter is { } last ? $", until {last}" : "");
+    }
+
+    /// <summary>
+    /// Silences the voice at once, and remembers it in settings.yaml: muted is how a
+    /// presentation is built without spending characters, and that should survive a restart.
+    /// </summary>
+    private void ToggleMute()
+    {
+        var muted = !_narrator.Muted;
+        _narrator.SetMuted(muted);
+        ApplySetting("narration.muted", muted ? "true" : "false");
     }
 
     /// <summary>Stops the turn in flight without losing the conversation.</summary>
@@ -1033,7 +1044,7 @@ public sealed class MainWindow : Window
                 break;
 
             case Key.M:
-                _narrator.Mute();
+                ToggleMute();
                 break;
 
             case Key.S:

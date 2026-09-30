@@ -87,6 +87,8 @@ public sealed class SilentEngine(double charactersPerSecond) : ITtsEngine
 {
     public string Name => "subtitles only";
 
+    public double CharactersPerSecond => charactersPerSecond;
+
     public bool IsAvailable => true;
 
     public Task<VoiceClip> SynthesizeAsync(string text, CancellationToken cancellationToken)

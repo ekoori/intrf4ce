@@ -55,7 +55,8 @@ public sealed class Narrator
         _subtitles = subtitles;
         _orb = orb;
         _settings = settings;
-        _audio.Volume = (float)settings.Volume;
+        _muted = settings.Muted;
+        _audio.Volume = _muted ? 0 : (float)settings.Volume;
         _subtitles.Enabled = settings.Subtitles;
         _advanceAsLoaded = settings.Advance;
         Continuous = string.Equals(settings.Advance, "auto", StringComparison.OrdinalIgnoreCase);
@@ -175,6 +176,7 @@ public sealed class Narrator
     /// </remarks>
     public void SettingsChanged()
     {
+        SetMuted(_settings.Muted);
         _audio.Volume = _muted ? 0 : (float)_settings.Volume;
         _subtitles.Enabled = _settings.Subtitles;
         if (!_settings.Subtitles)
@@ -257,11 +259,62 @@ public sealed class Narrator
 
     public void Mute() => SetMuted(!_muted);
 
+    /// <summary>
+    /// Silences the voice, or lets it speak again.
+    /// </summary>
+    /// <remarks>
+    /// While muted nothing is asked of a voice at all — subtitles run at reading speed — so a
+    /// presentation built with the sound off costs no characters. Unmuting part-way through a
+    /// slide that was being read silently speaks that slide from the top, which is what someone
+    /// reaching for the sound wants to hear.
+    /// </remarks>
     public void SetMuted(bool muted)
     {
+        if (_muted == muted)
+        {
+            return;
+        }
+
         _muted = muted;
         _audio.Volume = _muted ? 0 : (float)_settings.Volume;
+
+        if (!muted && _now is { Clip.AudioPath: null, Slide: { } slide } && slide.Narration is { Length: > 0 } narration)
+        {
+            Stop();
+            _ = PerformAsync(narration, slide);
+        }
+
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Speaks a slide again in the current voice, rather than the recording it already has.
+    /// </summary>
+    /// <remarks>
+    /// Changing the voice never re-records what has been spoken — that would be paid for — so
+    /// this is how a slide, or every slide, is asked for again on purpose.
+    /// </remarks>
+    /// <returns>How many recordings were discarded.</returns>
+    public int Revoice(IEnumerable<Slide> slides, Slide? current)
+    {
+        ArgumentNullException.ThrowIfNull(slides);
+
+        var discarded = 0;
+        foreach (var slide in slides)
+        {
+            if (slide.Narration is { Length: > 0 } narration)
+            {
+                discarded += _voices.Forget(CueParser.Parse(narration).Text);
+            }
+        }
+
+        if (current?.Narration is { Length: > 0 } spoken && !Held)
+        {
+            Stop();
+            _ = PerformAsync(spoken, current);
+        }
+
+        return discarded;
     }
 
     public void ToggleSubtitles() => SetSubtitles(!_subtitles.Enabled);
@@ -307,6 +360,12 @@ public sealed class Narrator
     /// <summary>Synthesises a slide ahead of time so it starts the moment it is shown.</summary>
     public void Prepare(Slide? slide)
     {
+        // Muted spends nothing, and that includes getting ahead.
+        if (_muted)
+        {
+            return;
+        }
+
         if (slide?.Narration is { Length: > 0 } narration)
         {
             var text = CueParser.Parse(narration).Text;
@@ -369,7 +428,7 @@ public sealed class Narrator
         VoiceClip clip;
         try
         {
-            clip = await _voices.PrepareAsync(parsed.Text, preparing.Token);
+            clip = _muted ? _voices.Silent(parsed.Text) : await _voices.PrepareAsync(parsed.Text, preparing.Token);
         }
         catch (OperationCanceledException)
         {

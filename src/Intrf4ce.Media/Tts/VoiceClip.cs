@@ -39,6 +39,12 @@ public interface ITtsEngine
     /// <summary>Whether it can work at all here (a key is set, the platform has the voice).</summary>
     bool IsAvailable { get; }
 
+    /// <summary>
+    /// Whether <c>[whispers]</c> and its kind are directions to it rather than words to read.
+    /// </summary>
+    /// <remarks>False for every voice but ElevenLabs v3; the others are given the text without them.</remarks>
+    bool UnderstandsTags => false;
+
     /// <exception cref="VoiceUnavailableException">It cannot speak this now (budget, network, no voice).</exception>
     Task<VoiceClip> SynthesizeAsync(string text, CancellationToken cancellationToken);
 }

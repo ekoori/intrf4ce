@@ -52,13 +52,34 @@ public sealed class NarrationSettings
 
     /// <summary>Start speaking a slide as soon as it is shown.</summary>
     public bool Autoplay { get; set; } = true;
+
+    /// <summary>
+    /// The voice is silenced: subtitles run at reading speed and nothing is sent to a voice.
+    /// </summary>
+    /// <remarks>
+    /// Kept in the file, not just on the button, because its point is to spend nothing: a
+    /// presentation built while muted is not narrated behind the user's back, and neither is
+    /// one opened after a restart. Unmuting speaks the slide on screen, and then each as it
+    /// comes.
+    /// </remarks>
+    public bool Muted { get; set; }
 }
 
 public sealed class ElevenLabsSettings
 {
     public string VoiceId { get; set; } = "auq43ws1oslv0tO4BDa7";
 
-    public string ModelId { get; set; } = "eleven_multilingual_v2";
+    /// <summary>
+    /// v3 by default: the most natural and expressive model, and the one that takes audio
+    /// tags — <c>[curious]</c>, <c>[whispers]</c> — as directions rather than words.
+    /// </summary>
+    public string ModelId { get; set; } = "eleven_v3";
+
+    /// <summary>The key itself. Read first; the file, secrets.yaml and the environment are fallbacks.</summary>
+    /// <remarks>
+    /// Never shown in the settings panel, never given to the agent, never written to the log.
+    /// </remarks>
+    public string ApiKey { get; set; } = "";
 
     /// <summary>
     /// A file holding the API key, bare or as KEY=value (another project's .env works).
@@ -270,10 +291,16 @@ public static class SettingsFile
         live.Narration.Subtitles = loaded.Narration.Subtitles;
         live.Narration.Volume = loaded.Narration.Volume;
         live.Narration.Autoplay = loaded.Narration.Autoplay;
+        live.Narration.Muted = loaded.Narration.Muted;
 
         if (live.ElevenLabs.KeyFile != loaded.ElevenLabs.KeyFile)
         {
             later.Add("elevenlabs.key_file");
+        }
+
+        if (live.ElevenLabs.ApiKey != loaded.ElevenLabs.ApiKey)
+        {
+            later.Add("elevenlabs.api_key");
         }
 
         if (live.ElevenLabs.MaxConcurrent != loaded.ElevenLabs.MaxConcurrent)
@@ -478,6 +505,12 @@ public static class SettingsFile
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(settings);
 
+        // The file first: it is where the user said the key lives.
+        if (settings.ApiKey.Trim() is { Length: > 0 } fromSettings)
+        {
+            return fromSettings;
+        }
+
         if (Environment.GetEnvironmentVariable("ELEVENLABS_API_KEY") is { Length: > 0 } fromEnvironment)
         {
             return fromEnvironment.Trim();
@@ -544,16 +577,19 @@ public static class SettingsFile
           subtitles: true
           volume: 1.0
           autoplay: true          # start speaking a slide as soon as it is shown
+          muted: false            # true: subtitles only, and nothing is sent to a voice
 
         elevenlabs:
+          api_key: ""             # your ElevenLabs key; never shown in the app or to the agent
           voice_id: auq43ws1oslv0tO4BDa7
-          model_id: eleven_multilingual_v2
-          key_file: ""            # a file holding the key (bare, or KEY=value); or use secrets.yaml,
+          model_id: eleven_v3     # v3 is the most expressive, and reads [whispers]-style tags as
+                                  # directions; eleven_multilingual_v2 and eleven_flash_v2_5 too
+          key_file: ""            # or: a file holding the key (bare, or KEY=value), secrets.yaml,
                                   # or the ELEVENLABS_API_KEY environment variable
           monthly_cap: 30000      # characters intrf4ce may spend per month
           keep_in_reserve: 2000   # stop when the account has fewer than this left
           max_concurrent: 2       # clips asked for at once; plans allow only a few (3 on Starter)
-          stability: 0.5
+          stability: 0.5          # lower is more expressive and varied, higher more even
           similarity_boost: 0.75
           style: 0
           speed: 1.0

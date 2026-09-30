@@ -114,4 +114,7 @@ public sealed class VoiceCache(string shared)
     }
 
     private static string? Folder(string engine, string? root) => root is null ? null : Path.Combine(root, engine);
+
+    /// <summary>This presentation's own folder for an engine's clips; null when no deck is open.</summary>
+    public string? SessionFolder(string engine) => Folder(engine, SessionRoot());
 }

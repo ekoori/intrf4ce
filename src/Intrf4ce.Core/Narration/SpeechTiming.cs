@@ -65,6 +65,31 @@ public sealed class SpeechTiming
     }
 
     /// <summary>
+    /// The timing of narration that carries audio tags, from the timing of the same words
+    /// spoken without them.
+    /// </summary>
+    /// <remarks>
+    /// For a voice that cannot take the tags: it speaks the stripped text, and every character
+    /// of the original — a tag's included — gets the time of the character it became, so cue
+    /// and caption offsets written against the original still land where they should.
+    /// </remarks>
+    public static SpeechTiming Spread(string text, SpeechTiming spoken, IReadOnlyList<int> map)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(spoken);
+        ArgumentNullException.ThrowIfNull(map);
+
+        var starts = new double[text.Length];
+        for (var i = 0; i < text.Length; i++)
+        {
+            starts[i] = spoken.TimeAt(i < map.Count ? map[i] : int.MaxValue);
+        }
+
+        MakeMonotonic(starts);
+        return new SpeechTiming(text, starts, spoken.Duration, spoken.IsExact);
+    }
+
+    /// <summary>
     /// From a voice that reports when each character starts.
     /// </summary>
     /// <remarks>

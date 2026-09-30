@@ -29,6 +29,12 @@ namespace Intrf4ce.Media.Tts;
 /// key, and being told so is not a reason to hand the line to another voice, so a refusal for
 /// that reason is waited out and tried again.
 /// </para>
+/// <para>
+/// Once a presentation has had a line spoken, that recording is its recording. Changing the
+/// voice, the model or its settings afterwards does not have every slide spoken and paid for
+/// again: a clip of the same words already in the session is used whoever made it, and only
+/// new words get the new voice. <c>:revoice</c> is the way to ask for a slide again.
+/// </para>
 /// </remarks>
 public sealed class ElevenLabsEngine : ITtsEngine
 {
@@ -43,6 +49,9 @@ public sealed class ElevenLabsEngine : ITtsEngine
     private readonly VoiceCache _clips;
     private readonly SemaphoreSlim _gate;
     private readonly VoiceBudget _budget;
+    private readonly object _spokenGate = new();
+    private readonly Dictionary<string, (DateTime Stamp, Dictionary<string, (string Stem, string Text)> ByWords)> _spoken =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public ElevenLabsEngine(HttpClient http, string? key, ElevenLabsSettings settings, VoiceCache clips)
     {
@@ -63,6 +72,9 @@ public sealed class ElevenLabsEngine : ITtsEngine
     public string Name => "ElevenLabs";
 
     public bool IsAvailable => !string.IsNullOrWhiteSpace(_key);
+
+    /// <summary>v3 takes <c>[whispers]</c> as a direction; the earlier models would read it out.</summary>
+    public bool UnderstandsTags => _settings.ModelId.StartsWith("eleven_v3", StringComparison.OrdinalIgnoreCase);
 
     public VoiceBudget Budget => _budget;
 
@@ -89,6 +101,12 @@ public sealed class ElevenLabsEngine : ITtsEngine
         if (_clips.Existing(Kind, names) is { } kept)
         {
             return Load(text, Path.Combine(kept, names[0]), Path.Combine(kept, names[1]), billed: 0);
+        }
+
+        // The same words, already spoken in this presentation by another voice or model.
+        if (Reuse(text) is { } reused)
+        {
+            return reused;
         }
 
         await _budget.CheckAsync(text.Length, cancellationToken).ConfigureAwait(false);
@@ -179,6 +197,126 @@ public sealed class ElevenLabsEngine : ITtsEngine
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Removes this presentation's recordings of <paramref name="words"/>, whichever voice
+    /// made them, so they are spoken again.
+    /// </summary>
+    public int Forget(string words)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+
+        if (_clips.SessionFolder(Kind) is not { } folder || !Directory.Exists(folder)
+            || !Spoken(folder).TryGetValue(words, out var found))
+        {
+            return 0;
+        }
+
+        var removed = 0;
+        foreach (var file in new[] { found.Stem + ".mp3", found.Stem + ".json" })
+        {
+            try
+            {
+                File.Delete(Path.Combine(folder, file));
+                removed++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+
+        lock (_spokenGate)
+        {
+            _spoken.Remove(folder);
+        }
+
+        return removed > 0 ? 1 : 0;
+    }
+
+    /// <summary>
+    /// A clip of these words already in this presentation, made by any voice, timed to
+    /// <paramref name="text"/>; null when the words have never been spoken here.
+    /// </summary>
+    /// <remarks>
+    /// Matched on the words alone, with audio tags set aside, so narration first spoken by an
+    /// older model without its tags is not paid for again when the model that reads them
+    /// arrives. Only the presentation's own clips count: another presentation, in another
+    /// voice, is not this one's recording.
+    /// </remarks>
+    private VoiceClip? Reuse(string text)
+    {
+        if (_clips.SessionFolder(Kind) is not { } folder || !Directory.Exists(folder))
+        {
+            return null;
+        }
+
+        var (words, map, _) = AudioTags.Strip(text);
+        if (!Spoken(folder).TryGetValue(words, out var found))
+        {
+            return null;
+        }
+
+        var audio = Path.Combine(folder, found.Stem + ".mp3");
+        var alignment = Path.Combine(folder, found.Stem + ".json");
+        if (!File.Exists(audio) || !File.Exists(alignment))
+        {
+            return null;
+        }
+
+        var clip = Load(found.Text, audio, alignment, billed: 0);
+        if (found.Text == text)
+        {
+            return clip;
+        }
+
+        // Timed first onto the bare words, then onto the text as it is now written.
+        var (_, _, origin) = AudioTags.Strip(found.Text);
+        var byWords = SpeechTiming.Spread(words, clip.Timing, origin);
+        return clip with { Timing = SpeechTiming.Spread(text, byWords, map) };
+    }
+
+    /// <summary>
+    /// What each clip in a session folder says, read back from its alignment, which records
+    /// every character that was sent.
+    /// </summary>
+    private Dictionary<string, (string Stem, string Text)> Spoken(string folder)
+    {
+        var stamp = Directory.GetLastWriteTimeUtc(folder);
+        lock (_spokenGate)
+        {
+            if (_spoken.TryGetValue(folder, out var cached) && cached.Stamp == stamp)
+            {
+                return cached.ByWords;
+            }
+        }
+
+        var byWords = new Dictionary<string, (string Stem, string Text)>(StringComparer.Ordinal);
+        foreach (var file in Directory.EnumerateFiles(folder, "*.json"))
+        {
+            try
+            {
+                var characters = (JsonNode.Parse(File.ReadAllText(file)) as JsonObject)?["characters"]?.AsArray();
+                if (characters is null || characters.Count == 0)
+                {
+                    continue;
+                }
+
+                var text = string.Concat(characters.Select(c => c?.GetValue<string>() ?? ""));
+                byWords[AudioTags.Strip(text).Spoken] = (Path.GetFileNameWithoutExtension(file), text);
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or UnauthorizedAccessException)
+            {
+                // A clip that cannot be read is one that will be made again.
+            }
+        }
+
+        lock (_spokenGate)
+        {
+            _spoken[folder] = (stamp, byWords);
+        }
+
+        return byWords;
     }
 
     /// <summary>The key shape <c>dev/11labs</c> uses: the JSON of text, voice, model and settings, hashed.</summary>

@@ -102,21 +102,22 @@ public sealed class SubtitleBar : Border
         var end = caption.End;
 
         // Before the current word: spoken.
+        // Audio tags are for the voice; what is shown is only what is said.
         var spokenEnd = word.Length > 0 ? Math.Clamp(word.Start, start, end) : Math.Clamp(offset, start, end);
         if (spokenEnd > start)
         {
-            inlines.Add(new Run(text[start..spokenEnd]) { Foreground = _skin.Brush(_skin.Text) });
+            inlines.Add(new Run(AudioTags.Visible(text, start, spokenEnd)) { Foreground = _skin.Brush(_skin.Text) });
         }
 
         if (word.Length > 0 && word.Start >= start && word.End <= end)
         {
-            inlines.Add(new Run(text[word.Start..word.End]) { Foreground = _skin.Brush(_skin.Accent) });
+            inlines.Add(new Run(AudioTags.Visible(text, word.Start, word.End)) { Foreground = _skin.Brush(_skin.Accent) });
             spokenEnd = word.End;
         }
 
         if (spokenEnd < end)
         {
-            inlines.Add(new Run(text[spokenEnd..end]) { Foreground = _skin.Brush(_skin.Text, 0.5) });
+            inlines.Add(new Run(AudioTags.Visible(text, spokenEnd, end)) { Foreground = _skin.Brush(_skin.Text, 0.5) });
         }
     }
 }

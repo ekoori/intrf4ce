@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Intrf4ce.Core;
+using Intrf4ce.Core.Narration;
 using Intrf4ce.Core.Settings;
 using Intrf4ce.Media.Audio;
 
@@ -38,13 +39,17 @@ public sealed class VoiceService
     public string Primary => _engines.FirstOrDefault(e => e.IsAvailable)?.Name ?? "none";
 
     /// <summary>One line for get_state: which voice, and what is left of the budget.</summary>
+    /// <summary>Whether narration can carry <c>[whispers]</c>-style directions, for the agent.</summary>
+    public bool UnderstandsTags => ElevenLabs is { IsAvailable: true, UnderstandsTags: true } && Primary == ElevenLabs.Name;
+
     public string Describe()
     {
         if (ElevenLabs is { IsAvailable: true } eleven && Primary == eleven.Name)
         {
             var budget = eleven.Budget;
             var account = budget.AccountRemaining is { } left ? $", account has {left:N0} left" : "";
-            return $"ElevenLabs ({budget.UsedThisMonth:N0} of {budget.MonthlyCap:N0} characters used this month{account})";
+            var tags = eleven.UnderstandsTags ? "; v3, so audio tags such as [curious] or [whispers] are read as directions" : "";
+            return $"ElevenLabs ({budget.UsedThisMonth:N0} of {budget.MonthlyCap:N0} characters used this month{account}{tags})";
         }
 
         return Primary;
@@ -93,13 +98,53 @@ public sealed class VoiceService
             return task;
         }, TaskScheduler.Default).Unwrap();
 
+    /// <summary>
+    /// Timing for <paramref name="text"/> with nothing spoken: what a muted presentation shows,
+    /// and costs nothing.
+    /// </summary>
+    /// <remarks>
+    /// Muted means no voice is asked for at all. Asking and then not playing it would still
+    /// spend the characters, which is the whole thing the user was avoiding.
+    /// </remarks>
+    public VoiceClip Silent(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        var (spoken, map, _) = AudioTags.Strip(text);
+        var speed = _engines.OfType<SilentEngine>().LastOrDefault()?.CharactersPerSecond ?? 16;
+        var timing = SpeechTiming.Estimate(spoken, SpeechTiming.ReadingDuration(spoken, speed), 0, 0.3);
+        return new VoiceClip(null, SpeechTiming.Spread(text, timing, map), "subtitles only", 0, []);
+    }
+
+    /// <summary>
+    /// Forgets what this presentation's voice made of <paramref name="text"/>, so the next
+    /// time it is performed it is spoken afresh in the current voice.
+    /// </summary>
+    /// <returns>How many clips were removed.</returns>
+    public int Forget(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        _inFlight.TryRemove(text, out _);
+        return ElevenLabs?.Forget(AudioTags.Strip(text).Spoken) ?? 0;
+    }
+
     private async Task<VoiceClip> SynthesizeAsync(string text, CancellationToken cancellationToken)
     {
         foreach (var engine in _engines.Where(e => e.IsAvailable))
         {
             try
             {
-                return await engine.SynthesizeAsync(text, cancellationToken).ConfigureAwait(false);
+                if (engine.UnderstandsTags || !AudioTags.Any(text))
+                {
+                    return await engine.SynthesizeAsync(text, cancellationToken).ConfigureAwait(false);
+                }
+
+                // Given the words alone, then timed back onto the text with its tags, so cues
+                // written against the tagged text still land.
+                var (spoken, map, _) = AudioTags.Strip(text);
+                var clip = await engine.SynthesizeAsync(spoken, cancellationToken).ConfigureAwait(false);
+                return clip with { Timing = SpeechTiming.Spread(text, clip.Timing, map) };
             }
             catch (VoiceUnavailableException ex)
             {
