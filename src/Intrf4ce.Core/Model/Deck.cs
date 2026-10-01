@@ -41,7 +41,8 @@ public sealed record Slide
 
 /// <summary>One turn of the conversation that built a presentation.</summary>
 /// <param name="Who">user or agent.</param>
-public sealed record ChatLine(string Who, string Text, DateTimeOffset At);
+/// <param name="Files">What the user dropped on the conversation with it, by full path.</param>
+public sealed record ChatLine(string Who, string Text, DateTimeOffset At, IReadOnlyList<string>? Files = null);
 
 /// <summary>A presentation: an ordered list of slides and where their files live.</summary>
 public sealed record Deck

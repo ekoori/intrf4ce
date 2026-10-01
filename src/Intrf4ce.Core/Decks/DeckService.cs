@@ -254,16 +254,20 @@ public sealed class DeckService : IDisposable
     /// </summary>
     /// <remarks>
     /// Silently nothing when no deck is open: the user may chat before there is anything to
-    /// chat about, and the agent decides what the subject is by making a deck for it.
+    /// chat about, and the agent decides what the subject is by making a deck for it. A picture
+    /// dropped with nothing typed is a turn of its own.
     /// </remarks>
-    public void AddChat(bool fromUser, string text)
+    public void AddChat(bool fromUser, string text, IReadOnlyList<string>? files = null)
     {
-        if (Current is null || string.IsNullOrWhiteSpace(text))
+        ArgumentNullException.ThrowIfNull(text);
+        var withFiles = files is { Count: > 0 };
+        if (Current is null || (string.IsNullOrWhiteSpace(text) && !withFiles))
         {
             return;
         }
 
-        UpdateDeck(d => d with { Chat = Recent(d.Chat.Add(new ChatLine(fromUser ? "user" : "agent", text, _now()))) });
+        var line = new ChatLine(fromUser ? "user" : "agent", text, _now(), withFiles ? [.. files!] : null);
+        UpdateDeck(d => d with { Chat = Recent(d.Chat.Add(line)) });
     }
 
     /// <summary>

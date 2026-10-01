@@ -57,7 +57,7 @@ one. The keys are vim's where vim has one.
 | `j` `k` (or `↓` `↑`) | the next, previous part of a slide (callouts, diagram steps, rows, places) |
 | `gg` `G` | first, last slide; `:12` goes to slide 12 |
 | `o` `0` | overview of the whole deck; back to the whole slide |
-| `Space` | play or pause this slide |
+| `Space` | play or pause this slide; a pause holds: going to another slide leaves it quiet until you play |
 | `c` | keep going through the deck, or stop at the end of each slide |
 | `x` | stop: no voice, and nothing moves on by itself |
 | `m` `s` | mute (nothing is sent to the voice), subtitles |
@@ -71,12 +71,13 @@ one. The keys are vim's where vim has one.
 | `i` | the picture on this slide, filling the stage |
 | `+` `-` | zoom in, out |
 | `f` `F11` | fullscreen |
+| `z` | just the slides: hide the title, the progress and the buttons over the stage, or bring them back |
 | `Esc` | back out of whatever is open; stops the agent mid-answer |
 
 Some commands with no key of their own: `:set subtitles!` flips a setting, `:set volume 0.5` sets
-one, `:group Rivers` files this session, `:rename …`, `:open <session>`, `:ask …`, `:bind gt next`
-and `:unbind x` (both kept in settings.yaml), `:q` to quit. In any text box, Enter sends and
-Shift+Enter is a new line.
+one, `:config` opens settings.yaml in your editor, `:group Rivers` files this session, `:rename …`,
+`:open <session>`, `:ask …`, `:attach <path>`, `:bind gt next` and `:unbind x` (both kept in
+settings.yaml), `:q` to quit. In any text box, Enter sends and Shift+Enter is a new line.
 
 With the mouse: the wheel zooms, dragging pans, and clicking a callout, a node, a photo, a row or
 a place on a map focuses it (and again goes back). Right-clicking anything offers **Ask about
@@ -87,9 +88,16 @@ the picture's own coordinates. Double-clicking anywhere else puts the slide back
 
 The controls along the bottom are the performance on the left — play or pause this slide, a tick
 for whether it runs on through the rest of the deck, the voice, the subtitles — and the deck's
-own arrows on the right. The side columns fold to strips: the menu icon at the top of the left one
-and the glowing orb at the top of the right one fold and open them, a `+` under the menu starts a
-new session, and the settings and talk icons sit at the bottom, level with the stage's buttons.
+own arrows on the right; `z` hides the lot, with the title and progress above, for just the slides.
+The side columns fold to strips: the menu icon at the top of the left one and the orb at the top
+of the right one — still, and turning only while the agent works — fold and open them, a `+` under
+the menu starts a new session, and the settings and talk icons sit at the bottom, level with the
+stage's buttons.
+
+**Pictures for the agent.** Drag photos, a folder or any file onto the conversation, the talk box
+or the stage, or `:attach` one; they wait above the box, with a ✕ each, and go with the next thing
+you say — or on their own when you just press Enter. The agent gets each one's path: it can look at
+a picture, put it on a slide, label what is in it, or make a gallery of a folder.
 
 **Sessions** can be filed into groups: drag one onto a group, onto another session to join its
 group, or onto "new group"; or right-click it; or `:group`. Ask the agent to organise them and it
@@ -105,7 +113,13 @@ The settings worth changing while something is playing — subtitles, the voice,
 fast the camera moves — are in a panel on the stage: the gear at the foot of the sessions column,
 or `,`. Every control there writes one line of `settings.yaml` and leaves the rest of your file,
 comments and all, exactly as you wrote it; the agent changes settings through the same door, when
-you ask it to. Everything else lives in the file, which that panel will open for you.
+you ask it to. Everything else lives in the file, which that panel, or `:config`, opens in your
+editor — or in Notepad, when nothing on Windows claims `.yaml` files.
+
+The window opens where it was closed, at the size it was, maximised if it was — but always whole
+on a screen, title bar and all: never bigger than the screen it is on, nor over its edge. The first
+time, or when the screen it was on has gone, it opens centred on the screen the pointer is on. That
+is kept in `window.json` beside `settings.yaml`.
 
 `settings.yaml` is written on first run, with every setting and what it does. It lives in:
 

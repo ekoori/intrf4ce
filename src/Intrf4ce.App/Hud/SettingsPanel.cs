@@ -410,19 +410,10 @@ public sealed class SettingsPanel : Border
     /// <summary>Opens settings.yaml in whatever the user edits text with.</summary>
     private void Reveal(string path)
     {
-        try
+        SettingsFile.WriteDefaultIfMissing(path);
+        if (Shell.Edit(path) is { } error)
         {
-            SettingsFile.WriteDefaultIfMissing(path);
-            using var opening = new System.Diagnostics.Process
-            {
-                StartInfo = new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true },
-            };
-
-            opening.Start();
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or InvalidOperationException)
-        {
-            Complain($"Could not open {path}: {ex.Message}");
+            Complain(error);
         }
     }
 }

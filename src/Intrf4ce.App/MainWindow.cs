@@ -63,17 +63,23 @@ public sealed partial class MainWindow : Window
     private readonly PromptBar _prompt;
     private readonly HelpPanel _help;
     private readonly KeyMap _keyMap = new();
+    private readonly string _placementFile;
+    private (PixelPoint Position, double Width, double Height) _normal;
     private readonly KeyReader _keyReader;
     private readonly CommandRegistry _commands = new();
     private readonly AppPaths _paths;
     private readonly AppSettings _settings;
     private readonly SettingsWatcher? _watcher;
     private readonly WelcomePanel _welcome;
-    private readonly List<(bool FromUser, string Text)> _saidBeforeThereWasADeck = [];
+    private readonly List<(bool FromUser, string Text, IReadOnlyList<string>? Files)> _saidBeforeThereWasADeck = [];
+
+    /// <summary>Files dropped for the agent, waiting to go with the next thing said.</summary>
+    private readonly List<string> _attachments = [];
     private AskSubject? _asking;
     private string? _resumed;
     private string? _said;
     private int _toolCalls;
+    private DateTime _attachedBusyUntil;
 
     public MainWindow(AppPaths paths, AppSettings settings, string? settingsError)
     {
@@ -82,11 +88,16 @@ public sealed partial class MainWindow : Window
         _paths = paths;
         _settings = settings;
         Title = "intrf4ce";
-        Width = 1480;
-        Height = 920;
         MinWidth = 640;
         MinHeight = 420;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+
+        // Where it was left, kept on a screen; the first time, most of the primary screen.
+        _placementFile = Path.Combine(paths.Config, "window.json");
+        var placement = WindowPlacement.Load(_placementFile);
+        WindowPlacement.Apply(this, placement);
+        _normal = (Position, Width, Height);
+        PositionChanged += (_, _) => RememberNormal();
+        SizeChanged += (_, _) => RememberNormal();
 
         // No system title bar: ours is the app's colour and carries the half-typed keys. The
         // frame stays, so the window still resizes from its edges and snaps.
@@ -151,7 +162,7 @@ public sealed partial class MainWindow : Window
         _help = new HelpPanel(_theme);
         _welcome = new WelcomePanel(_theme);
         _subtitles = new SubtitleBar(_theme);
-        _narrator = new Narrator(_voices, _audio, _controller, _subtitles, _chat.Orb, settings.Narration);
+        _narrator = new Narrator(_voices, _audio, _controller, _subtitles, settings.Narration);
 
         _stage.Background = new RadialGradientBrush
         {
@@ -179,6 +190,10 @@ public sealed partial class MainWindow : Window
         presentation.Children.Add(_subtitles);
         presentation.Children.Add(_transport);
         presentation.Children.Add(_nav);
+        // Files can be dropped anywhere on the stage too: it is the biggest target there is.
+        var stageVeil = Attachment.Overlay(_theme, "Drop to give it to the agent — it can put it on a slide, look at it, label what is in it");
+        presentation.Children.Add(stageVeil);
+        Attachment.AcceptDrops(presentation, stageVeil, Attach);
         presentation.Children.Add(_prompt);
         presentation.Children.Add(_inspector);
         presentation.Children.Add(_help);
@@ -231,6 +246,10 @@ public sealed partial class MainWindow : Window
 
         _chat.Submitted += (_, text) => OnChat(text);
         _chat.TalkRequested += (_, _) => Talk();
+        _chat.FilesDropped += (_, paths) => Attach(paths);
+        _chat.AttachmentRemoved += (_, path) => Detach(path);
+        _prompt.FilesDropped += (_, paths) => Attach(paths);
+        _prompt.AttachmentRemoved += (_, path) => Detach(path);
 
         _prompt.Complete = _commands.Complete;
         _prompt.Submitted += (_, entry) =>
@@ -347,8 +366,22 @@ public sealed partial class MainWindow : Window
         _stage.PointerPressed += (_, _) => _stage.Focus();
         _stage.Focusable = true;
 
-        Opened += (_, _) => Start(settingsError);
-        Closing += (_, _) => Shutdown();
+        Opened += (_, _) =>
+        {
+            if (placement?.Maximized == true)
+            {
+                WindowState = WindowState.Maximized;
+            }
+
+            Start(settingsError);
+        };
+
+        Closing += (_, _) =>
+        {
+            new WindowPlacement(_normal.Position.X, _normal.Position.Y, _normal.Width, _normal.Height, WindowState == WindowState.Maximized)
+                .Save(_placementFile);
+            Shutdown();
+        };
 
         UpdateHud();
     }
@@ -401,7 +434,7 @@ public sealed partial class MainWindow : Window
             _chat.Clear();
             foreach (var line in deck.Chat)
             {
-                _chat.AddMessage(line.Who == "user", line.Text, isError: false, line.At);
+                _chat.AddMessage(line.Who == "user", line.Text, isError: false, line.At, line.Files);
             }
 
             _chat.AddNote($"reopened · {DateTime.Now:HH:mm}");
@@ -635,6 +668,17 @@ public sealed partial class MainWindow : Window
             _agent.Start(_agent.SessionId);
         }
 
+        // Dropped files go with whatever is said next, as one tag each the agent can act on;
+        // a picture on its own still needs a sentence for the agent, if not for the panel.
+        var attached = TakeAttachments();
+        var typed = text;
+        if (text.Length == 0)
+        {
+            text = attached.Count == 1 ? "Have a look at this." : "Have a look at these.";
+        }
+
+        var files = string.Concat(attached.Select(p => $"\n<intrf4ce-attachment kind=\"{Attachment.Kind(p)}\" path=\"{p}\"/>"));
+
         if (_asking is { } subject)
         {
             _asking = null;
@@ -642,16 +686,16 @@ public sealed partial class MainWindow : Window
 
             // Kept with the presentation as it reads in the panel: a question about a callout
             // is as much part of the conversation as anything typed on its own.
-            Remember(fromUser: true, $"About {subject.Label}: {text}");
-            PublishFromStage("ask", text, Meta(subject));
+            Remember(fromUser: true, $"About {subject.Label}: {typed}", attached);
+            PublishFromStage("ask", text + files, Meta(subject));
             return;
         }
 
-        Remember(fromUser: true, text);
+        Remember(fromUser: true, typed, attached);
 
         // Plain chat reads as the user typed it, with where they are on one line after it, so
         // "what about this one?" has something to mean.
-        _events.Publish("chat", Resumption() + text + ContextTag(Situation()), null);
+        _events.Publish("chat", Resumption() + text + files + ContextTag(Situation()), null);
         ShowSent();
     }
 
@@ -712,16 +756,16 @@ public sealed partial class MainWindow : Window
             : "\n<intrf4ce-context " + string.Join(' ', meta.Select(m => $"{m.Key}=\"{m.Value}\"")) + "/>";
 
     /// <summary>Keeps a line of the conversation with the presentation it produced.</summary>
-    private void Remember(bool fromUser, string text)
+    private void Remember(bool fromUser, string text, IReadOnlyList<string>? files = null)
     {
         if (_decks.Current is null)
         {
             // Said before the agent had decided what the subject was; kept for the deck it makes.
-            _saidBeforeThereWasADeck.Add((fromUser, text));
+            _saidBeforeThereWasADeck.Add((fromUser, text, files));
             return;
         }
 
-        _decks.AddChat(fromUser, text);
+        _decks.AddChat(fromUser, text, files);
     }
 
     /// <summary>The first question belongs to the presentation that answers it.</summary>
@@ -734,9 +778,9 @@ public sealed partial class MainWindow : Window
 
         if (deck.Chat.IsEmpty)
         {
-            foreach (var (fromUser, text) in _saidBeforeThereWasADeck)
+            foreach (var (fromUser, text, files) in _saidBeforeThereWasADeck)
             {
-                _decks.AddChat(fromUser, text);
+                _decks.AddChat(fromUser, text, files);
             }
         }
 
@@ -755,7 +799,7 @@ public sealed partial class MainWindow : Window
     {
         var listening = _agent is not null || _server.Sessions.Any(s => s.Kind != SessionKind.Hosted);
         _chat.SetStatus(_agent is not null ? "Thinking…" : listening ? "Sent to your agent" : "No agent is connected to hear this");
-        _chat.Orb.Mood = listening ? OrbMood.Working : OrbMood.Absent;
+        UpdateHud();
     }
 
     private static Dictionary<string, string> Meta(AskSubject subject)
@@ -894,10 +938,23 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // Waiting for the user is the one call that is not work: the agent has finished and
+        // is listening, so the orb goes still at once instead of turning for four seconds.
+        if (tool == "wait_for_user")
+        {
+            ++_toolCalls;
+            _attachedBusyUntil = default;
+            _chat.SetStatus(null);
+            UpdateHud();
+            return;
+        }
+
         _chat.SetStatus($"{session.Client}: {tool.Replace('_', ' ')}");
 
-        // An attached agent never says it has finished, so the line clears itself when the
-        // calls stop rather than standing there naming the last one for ever.
+        // An attached agent never says it has finished, so the line clears itself — and the
+        // orb stops — when the calls stop, rather than naming the last one for ever.
+        _attachedBusyUntil = DateTime.UtcNow.AddSeconds(4);
+        UpdateHud();
         var calls = ++_toolCalls;
         DispatcherTimer.RunOnce(
             () =>
@@ -905,9 +962,10 @@ public sealed partial class MainWindow : Window
                 if (calls == _toolCalls)
                 {
                     _chat.SetStatus(null);
+                    UpdateHud();
                 }
             },
-            TimeSpan.FromSeconds(4));
+            TimeSpan.FromSeconds(4.2));
     }
 
     private string DescribeAgent()
@@ -949,15 +1007,23 @@ public sealed partial class MainWindow : Window
 
         _transport.Update(
             _narrator.IsSpeaking, _narrator.Held, _narrator.Continuous, _narrator.Muted, _narrator.SubtitlesOn, _narrator.State);
-        _transport.IsVisible = deck is { Count: > 0 };
+
+        // With the controls put away (z), only the slides — and the subtitles, which are what
+        // is being said rather than a way to control it — are left on the stage.
+        var chrome = _settings.Stage.ShowControls;
+        _header.IsVisible = chrome && deck is not null;
+        _transport.IsVisible = chrome && deck is { Count: > 0 };
         _nav.Update(_controller.CurrentIndex, deck?.Count ?? 0);
-        _nav.IsVisible = deck is { Count: > 1 };
+        _nav.IsVisible = chrome && deck is { Count: > 1 };
+        _stage.SafeArea = chrome ? new Thickness(24, 64, 24, 124) : new Thickness(12, 12, 12, _narrator.SubtitlesOn ? 76 : 12);
+        _subtitles.Margin = new Thickness(0, 0, 0, chrome ? 84 : 18);
         _chat.SetBusy(_agent?.IsWorking == true);
 
-        var busy = _agent?.Status is AgentStatus.Working or AgentStatus.Starting;
-        _chat.Orb.Mood = _agent?.Status == AgentStatus.Failed ? OrbMood.Error
-            : _narrator.IsSpeaking ? OrbMood.Speaking
-            : busy ? OrbMood.Working
+        // The orb moves only while an agent is working — the hosted one, or an attached one
+        // whose tool calls are still arriving. Speaking or idle, it is still.
+        var working = _agent?.IsWorking == true || DateTime.UtcNow < _attachedBusyUntil;
+        _chat.Orb.Mood = working ? OrbMood.Working
+            : _agent?.Status == AgentStatus.Failed ? OrbMood.Error
             : _agent is not null || attached.Count > 0 ? OrbMood.Idle
             : OrbMood.Absent;
 
@@ -1123,8 +1189,55 @@ public sealed partial class MainWindow : Window
     /// <summary>Something said from the bar or with <c>:ask</c>: into the transcript, then to the agent.</summary>
     private void Say(string text)
     {
-        _chat.AddMessage(fromUser: true, _asking is { } subject ? $"About {subject.Label}: {text}" : text);
+        _chat.AddMessage(fromUser: true, _asking is { } subject ? $"About {subject.Label}: {text}" : text, attachments: [.. _attachments]);
         OnChat(text);
+    }
+
+    /// <summary>Files dropped for the agent: kept for the next thing said, and the box opened to say it.</summary>
+    private void Attach(IReadOnlyList<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            if (!_attachments.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                _attachments.Add(path);
+            }
+        }
+
+        RefreshAttachments();
+        Talk();
+    }
+
+    private void Detach(string path)
+    {
+        _attachments.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        RefreshAttachments();
+    }
+
+    private List<string> TakeAttachments()
+    {
+        var taken = _attachments.ToList();
+        _attachments.Clear();
+        RefreshAttachments();
+        return taken;
+    }
+
+    private void RefreshAttachments()
+    {
+        _chat.ShowAttachments(_attachments);
+        _prompt.ShowAttachments(_attachments);
+    }
+
+    /// <summary>
+    /// Where the window is while it is neither maximised nor minimised: what is saved, so a
+    /// window closed maximised still comes back to its own size when restored.
+    /// </summary>
+    private void RememberNormal()
+    {
+        if (WindowState == WindowState.Normal)
+        {
+            _normal = (Position, Width, Height);
+        }
     }
 
     private void BringForward()

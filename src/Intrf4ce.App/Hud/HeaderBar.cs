@@ -35,7 +35,7 @@ public sealed class HeaderBar : StackPanel
 
     public void Update(string? title, int current, int count, bool overview)
     {
-        IsVisible = title is not null;
+        // Visibility is the window's to decide: it also hides this when the stage's controls are put away.
         _title.Text = title;
         _position.Text = count == 0
             ? "waiting for the first slide"

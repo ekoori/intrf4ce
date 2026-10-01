@@ -112,8 +112,10 @@ public sealed class TransportBar : Border
     /// <param name="state">What the narrator is doing, in its own words.</param>
     public void Update(bool speaking, bool held, bool continuous, bool muted, bool captions, string state)
     {
+        // A pause holds the deck too, but it is still a pause: play carries on mid-sentence.
+        var paused = state == "paused";
         _playPause.SetIcon(speaking ? Glyph.Pause : Glyph.Play);
-        _playPause.SetTooltip(speaking ? "Pause" : held ? "Play from here" : "Play this slide");
+        _playPause.SetTooltip(speaking ? "Pause" : paused ? "Carry on" : held ? "Play from here" : "Play this slide");
 
         _tick.IsVisible = continuous;
         _box.Background = continuous ? _skin.Brush(_skin.Accent) : Brushes.Transparent;
@@ -127,7 +129,7 @@ public sealed class TransportBar : Border
         _captions.Lit = captions;
         _captions.SetTooltip(captions ? "Hide the subtitles" : "Show the subtitles");
 
-        _state.Text = held ? "stopped" : state is "speaking" or "paused" or "preparing the voice" ? state : "";
+        _state.Text = paused ? state : held ? "stopped" : state is "speaking" or "preparing the voice" ? state : "";
     }
 
     private Border Divider() => new()

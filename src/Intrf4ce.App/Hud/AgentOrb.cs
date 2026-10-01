@@ -7,53 +7,73 @@ namespace Intrf4ce.App.Hud;
 
 public enum OrbMood
 {
-    /// <summary>No agent connected.</summary>
     Absent,
 
-    /// <summary>Connected and waiting: a slow breath.</summary>
     Idle,
 
-    /// <summary>Working on something: particles circling.</summary>
     Working,
-
-    /// <summary>The narration is playing: it pulses with the voice.</summary>
-    Speaking,
 
     Error,
 }
 
 /// <summary>
-/// The agent's presence: a small glowing sphere that breathes, orbits or speaks.
+/// The agent's mark at the head of the conversation: a round button like the menu's, still,
+/// until the agent is working — then it spins.
 /// </summary>
 /// <remarks>
-/// Knowledge Navigator gave its agent a face; a face overpromises. A single orb says as much
-/// as the user needs at a glance (is anyone there, are they busy, is something wrong) and
-/// costs nothing to ignore.
+/// It used to glow and breathe all the time, which made "the agent is thinking" look exactly
+/// like "the agent is there". Movement now means one thing only. At rest it wears the same
+/// colours as the menu icon on the other side of the window, because it is the same kind of
+/// thing: the handle that folds a column away.
 /// </remarks>
 public sealed class AgentOrb : Control
 {
-    private readonly Skin _theme;
+    private readonly Skin _skin;
     private readonly DispatcherTimer _timer;
     private readonly DateTime _start = DateTime.UtcNow;
     private OrbMood _mood = OrbMood.Absent;
+    private bool _over;
 
-    public AgentOrb(Skin theme)
+    public AgentOrb(Skin skin)
     {
-        _theme = theme;
-        Width = 30;
-        Height = 30;
-        _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(33), DispatcherPriority.Render, (_, _) => InvalidateVisual());
-    }
+        _skin = skin;
+        Width = Metrics.Button;
+        Height = Metrics.Button;
+        _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, (_, _) => InvalidateVisual());
 
-    /// <summary>0 to 1: how loud the voice is right now, for the speaking pulse.</summary>
-    public double Level { get; set; }
+        PointerEntered += (_, _) =>
+        {
+            _over = true;
+            InvalidateVisual();
+        };
+
+        PointerExited += (_, _) =>
+        {
+            _over = false;
+            InvalidateVisual();
+        };
+    }
 
     public OrbMood Mood
     {
         get => _mood;
         set
         {
+            if (_mood == value)
+            {
+                return;
+            }
+
             _mood = value;
+            if (value == OrbMood.Working && IsAttachedToVisualTree())
+            {
+                _timer.Start();
+            }
+            else
+            {
+                _timer.Stop();
+            }
+
             InvalidateVisual();
         }
     }
@@ -61,7 +81,10 @@ public sealed class AgentOrb : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        _timer.Start();
+        if (_mood == OrbMood.Working)
+        {
+            _timer.Start();
+        }
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -72,61 +95,45 @@ public sealed class AgentOrb : Control
 
     public override void Render(DrawingContext context)
     {
-        var t = (DateTime.UtcNow - _start).TotalSeconds;
-        var center = new Point(Bounds.Width / 2, Bounds.Height / 2);
-        var radius = Math.Min(Bounds.Width, Bounds.Height) / 2 - 3;
+        ArgumentNullException.ThrowIfNull(context);
 
-        var color = _mood switch
+        var size = Math.Min(Bounds.Width, Bounds.Height);
+        var centre = new Point(Bounds.Width / 2, Bounds.Height / 2);
+        var radius = (size / 2) - 0.5;
+
+        // The same disc as every round button: Surface2, a hairline of Line, brighter under the pointer.
+        context.DrawEllipse(_skin.Brush(_skin.Surface2, _over ? 1 : 0.85), new Pen(_skin.Brush(_skin.Line), 1), centre, radius, radius);
+
+        // The agent itself: a dot in the colour the menu icon's lines are drawn in.
+        var working = _mood == OrbMood.Working;
+        var dot = size * 0.13;
+        context.DrawEllipse(_skin.Brush(working ? _skin.Cool : _skin.Text, 0.95), null, centre, dot, dot);
+
+        if (!working)
         {
-            OrbMood.Error => _theme.Danger,
-            OrbMood.Absent => _theme.Faint,
-            OrbMood.Speaking => _theme.Accent,
-            _ => _theme.Cool,
-        };
-
-        var breath = _mood switch
-        {
-            OrbMood.Idle => 0.5 + (0.5 * Math.Sin(t * 1.6)),
-            OrbMood.Speaking => Math.Clamp(Level, 0, 1),
-            OrbMood.Working => 0.6 + (0.4 * Math.Sin(t * 5)),
-            _ => 0.2,
-        };
-
-        // Glow, then core.
-        var glow = new RadialGradientBrush
-        {
-            GradientStops =
-            {
-                new GradientStop(Color.FromArgb((byte)(90 + (110 * breath)), color.R, color.G, color.B), 0),
-                new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1),
-            },
-        };
-
-        context.DrawEllipse(glow, null, center, radius + 3 + (3 * breath), radius + 3 + (3 * breath));
-
-        var core = new RadialGradientBrush
-        {
-            GradientOrigin = new RelativePoint(0.35, 0.3, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(Colors.White, 0),
-                new GradientStop(color, 0.45),
-                new GradientStop(Color.FromArgb(255, (byte)(color.R * 0.35), (byte)(color.G * 0.35), (byte)(color.B * 0.35)), 1),
-            },
-        };
-
-        var coreRadius = radius * (0.62 + (0.08 * breath));
-        context.DrawEllipse(core, null, center, coreRadius, coreRadius);
-
-        if (_mood == OrbMood.Working)
-        {
-            var dot = new SolidColorBrush(color);
-            for (var i = 0; i < 3; i++)
-            {
-                var angle = (t * 3.2) + (i * Math.PI * 2 / 3);
-                var p = new Point(center.X + (Math.Cos(angle) * radius), center.Y + (Math.Sin(angle) * radius));
-                context.DrawEllipse(dot, null, p, 2.2, 2.2);
-            }
+            return;
         }
+
+        // Working: three quarters of a ring, going round once a second.
+        var t = (DateTime.UtcNow - _start).TotalSeconds;
+        var ring = size * 0.3;
+        var from = t * 2 * Math.PI;
+        var to = from + (1.5 * Math.PI);
+        var arc = new StreamGeometry();
+        using (var draw = arc.Open())
+        {
+            draw.BeginFigure(new Point(centre.X + (ring * Math.Cos(from)), centre.Y + (ring * Math.Sin(from))), isFilled: false);
+            draw.ArcTo(
+                new Point(centre.X + (ring * Math.Cos(to)), centre.Y + (ring * Math.Sin(to))),
+                new Size(ring, ring),
+                rotationAngle: 0,
+                isLargeArc: true,
+                SweepDirection.Clockwise);
+            draw.EndFigure(isClosed: false);
+        }
+
+        context.DrawGeometry(null, new Pen(_skin.Brush(_skin.Cool), 2.2, lineCap: PenLineCap.Round), arc);
     }
+
+    private bool IsAttachedToVisualTree() => TopLevel.GetTopLevel(this) is not null;
 }

@@ -173,7 +173,8 @@ public sealed class PresenterTools : IToolDispatcher
                 title = s.Title,
                 about = Gist(s),
             }),
-            conversation = deck.Chat.TakeLast(10).Select(c => $"{c.Who}: {Gist(c.Text, 200)}"),
+            conversation = deck.Chat.TakeLast(10).Select(c =>
+                $"{c.Who}: {Gist(c.Text, 200)}{(c.Files is { Count: > 0 } files ? $" [attached: {string.Join(", ", files)}]" : "")}"),
             note = deck.Id == _decks.Current?.Id
                 ? "this is the presentation on the stage"
                 : "not open; open_deck puts it on the stage, which takes the current one off",

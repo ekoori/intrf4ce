@@ -36,6 +36,7 @@ public sealed partial class MainWindow
         ("-", "zoom-out"),
         ("f", "fullscreen"), ("<F11>", "fullscreen"),
         ("i", "inspect"),
+        ("z", "hud"),
         ("<Space>", "play"),
         ("c", "continuous"),
         ("x", "stop"),
@@ -267,6 +268,25 @@ public sealed partial class MainWindow
     [Command("prompt", Description = "The command line", Group = "The window")]
     internal void CommandPrompt() => _prompt.Open(PromptMode.Command);
 
+    [Command("hud", Aliases = ["zen", "controls"], Description = "Show or hide the title, progress and buttons over the stage", Group = "The window")]
+    internal string CommandHud([Choices("onoff")] string? state = null)
+    {
+        var show = Toggle(state, _settings.Stage.ShowControls);
+        _settings.Stage.ShowControls = show;
+        ApplySetting("stage.show_controls", show ? "true" : "false");
+        UpdateHud();
+        return show ? "controls shown" : "just the slides — z brings the controls back";
+    }
+
+    [Command("config", Aliases = ["edit-config"], Description = "Open settings.yaml in your editor", Group = "Settings and keys")]
+    internal string CommandConfig()
+    {
+        SettingsFile.WriteDefaultIfMissing(_paths.SettingsFile);
+        return Shell.Edit(_paths.SettingsFile) is { } error
+            ? throw new CommandException(error)
+            : $"opened {_paths.SettingsFile}; saving it applies the changes";
+    }
+
     [Command("settings", Description = "The settings panel", Group = "The window")]
     internal void CommandSettings() => ShowSettings(true);
 
@@ -333,6 +353,19 @@ public sealed partial class MainWindow
 
     [Command("ask", Description = "Say something to the agent", Group = "The agent")]
     internal void CommandAsk([Rest] string text) => Say(text);
+
+    [Command("attach", Description = "Give the agent a picture, folder or file with the next thing you say", Group = "The agent")]
+    internal string CommandAttach([Rest] string path)
+    {
+        var full = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+        if (!File.Exists(full) && !Directory.Exists(full))
+        {
+            throw new CommandException($"there is nothing at {full}");
+        }
+
+        Attach([Path.GetFullPath(full)]);
+        return $"{Path.GetFileName(full.TrimEnd('\\', '/'))} goes with the next thing you say";
+    }
 
     [Command("stop-agent", Description = "Stop the agent's turn, keeping the conversation", Group = "The agent")]
     internal void CommandStopAgent() => StopAgent();

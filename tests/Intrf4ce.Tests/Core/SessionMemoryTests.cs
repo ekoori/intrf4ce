@@ -44,6 +44,32 @@ public sealed class SessionMemoryTests : IDisposable
     }
 
     [Fact]
+    public void FilesDroppedOnTheConversationAreKeptWithTheLineTheyWentWith()
+    {
+        var store = new DeckStore(_root);
+        using (var service = new DeckService(store))
+        {
+            service.New("Photos");
+            service.AddChat(fromUser: true, "what is this?", [@"C:\photos\harbour.jpg"]);
+            service.AddChat(fromUser: true, "", [@"C:\photos\a.jpg", @"C:\photos\b.jpg"]);
+            service.AddChat(fromUser: false, "A harbour at dusk.");
+        }
+
+        var chat = store.Load("photos").Chat;
+
+        Assert.Equal(3, chat.Count);
+        Assert.Equal([@"C:\photos\harbour.jpg"], chat[0].Files!);
+
+        // A picture sent with nothing typed is still a turn of the conversation.
+        Assert.Equal("", chat[1].Text);
+        Assert.Equal(2, chat[1].Files!.Count);
+
+        // Lines without files say nothing about files, in the file or in the record.
+        Assert.Null(chat[2].Files);
+        Assert.DoesNotContain("\"files\"", File.ReadAllText(Path.Combine(_root, "photos", "deck.json")).Split("A harbour at dusk")[1]);
+    }
+
+    [Fact]
     public void NothingIsKeptBeforeThereIsAPresentationToKeepItWith()
     {
         using var service = new DeckService(new DeckStore(_root));

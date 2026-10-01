@@ -44,6 +44,8 @@ public sealed class PromptBar : Panel
     private readonly Border _message;
     private readonly TextBlock _messageText;
     private readonly StackPanel _column;
+    private readonly AttachmentStrip _attached;
+    private int _pending;
     private readonly Dictionary<PromptMode, List<string>> _history = new() { [PromptMode.Command] = [], [PromptMode.Talk] = [] };
     private IReadOnlyList<Completion> _candidates = [];
     private int _selected = -1;
@@ -148,6 +150,9 @@ public sealed class PromptBar : Panel
         row.Children.Add(_hint);
         row.Children.Add(_input);
 
+        _attached = new AttachmentStrip(skin) { Margin = new Thickness(14, 10, 14, 0) };
+        _attached.Removed += (_, path) => AttachmentRemoved?.Invoke(this, path);
+
         _box = new Border
         {
             IsVisible = false,
@@ -156,8 +161,10 @@ public sealed class PromptBar : Panel
             BorderBrush = skin.Brush(skin.Accent, 0.7),
             BorderThickness = new Thickness(1),
             BoxShadow = BoxShadows.Parse("0 12 36 0 #90000000"),
-            Child = row,
+            Child = new StackPanel { Children = { _attached, row } },
         };
+
+        Attachment.AcceptDrops(_box, null, paths => FilesDropped?.Invoke(this, paths));
 
         _completionsFrame = new Border
         {
@@ -200,6 +207,21 @@ public sealed class PromptBar : Panel
     /// <summary>The bar was put away without anything being entered.</summary>
     public event EventHandler? Dismissed;
 
+    /// <summary>Files were dropped on the bar, for the agent.</summary>
+    public event EventHandler<IReadOnlyList<string>>? FilesDropped;
+
+    /// <summary>A waiting file was taken back off the message.</summary>
+    public event EventHandler<string>? AttachmentRemoved;
+
+    /// <summary>The files waiting to go with the next message; shown while talking.</summary>
+    public void ShowAttachments(IReadOnlyList<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        _pending = paths.Count;
+        _attached.Show(paths);
+        _attached.IsVisible = paths.Count > 0 && Mode == PromptMode.Talk;
+    }
+
     /// <summary>What completion offers for the command line, from the command registry.</summary>
     public Func<string, IReadOnlyList<Completion>>? Complete { get; set; }
 
@@ -217,6 +239,7 @@ public sealed class PromptBar : Panel
         _hint.Text = mode == PromptMode.Command ? "tab completes · ↑ history · esc" : "↵ send · ⇧↵ new line · esc";
         _input.PlaceholderText = mode == PromptMode.Command ? "a command — :help lists them" : HasContext ? "what about it?" : "say something to the agent";
         _context.IsVisible = mode == PromptMode.Talk && _contextText.Text is { Length: > 0 };
+        _attached.IsVisible = mode == PromptMode.Talk && _pending > 0;
         _box.IsVisible = true;
         _historyAt = -1;
         Set(text ?? "");
@@ -348,6 +371,14 @@ public sealed class PromptBar : Panel
         if (Mode == PromptMode.Talk && text.Length == 0 && HasContext)
         {
             text = "Tell me more about this.";
+        }
+
+        // A picture may be the whole message.
+        if (text.Length == 0 && Mode == PromptMode.Talk && _pending > 0)
+        {
+            Close();
+            Submitted?.Invoke(this, (PromptMode.Talk, ""));
+            return;
         }
 
         if (text.Length == 0)

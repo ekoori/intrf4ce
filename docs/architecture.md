@@ -146,3 +146,10 @@ playing, and which slides they have not yet heard. Without that, "how deep is th
 agent as four words about nothing. The agent can work the same controls back through
 `set_playback` — including playing a range of slides, which is how the answer to a new question
 gets performed without replaying the deck.
+
+Files dropped on the window travel the same way, as one `<intrf4ce-attachment kind=… path=…/>`
+line each after the words they were sent with. A path rather than the bytes: the agent already
+has the tools to read a file — `inspect_image` for a picture, its own Read for anything else —
+and a path is what an image element or a gallery wants. The conversation keeps the paths with
+the line they went with, so a reopened presentation shows the pictures again, and the agent's
+summary of a session lists them.

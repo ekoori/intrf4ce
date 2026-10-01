@@ -39,6 +39,8 @@ public sealed class ConversationPanel : Border
     private readonly Border _box;
     private readonly DockPanel _full;
     private readonly DockPanel _strip;
+    private readonly AttachmentStrip _attached;
+    private IReadOnlyList<string> _pending = [];
     private readonly Panel _stripTop;
     private string _placeholder = "Ask for anything to be explained…";
     private double _preferred = 420;
@@ -235,10 +237,16 @@ public sealed class ConversationPanel : Border
 
         _full = new DockPanel();
         DockPanel.SetDock(_header, Dock.Top);
+        // Files dropped anywhere on the conversation wait here, above the box, for the message.
+        _attached = new AttachmentStrip(theme) { Margin = new Thickness(18, 0, 18, 4) };
+        _attached.Removed += (_, path) => AttachmentRemoved?.Invoke(this, path);
+
         DockPanel.SetDock(_box, Dock.Bottom);
+        DockPanel.SetDock(_attached, Dock.Bottom);
         DockPanel.SetDock(_context, Dock.Bottom);
         _full.Children.Add(_header);
         _full.Children.Add(_box);
+        _full.Children.Add(_attached);
         _full.Children.Add(_context);
         _full.Children.Add(_scroller);
 
@@ -258,11 +266,26 @@ public sealed class ConversationPanel : Border
         _strip.Children.Add(talk);
         _strip.Children.Add(new Panel());
 
-        Child = new Panel { Children = { _full, _strip } };
+        var veil = Attachment.Overlay(theme, "Drop to give it to the agent");
+        Child = new Panel { Children = { _full, _strip, veil } };
+        Attachment.AcceptDrops(this, veil, paths => FilesDropped?.Invoke(this, paths));
     }
 
     /// <summary>The icon at the foot of the folded strip: open the input at the bottom of the stage.</summary>
     public event EventHandler? TalkRequested;
+
+    /// <summary>Files were dropped on the conversation, for the agent.</summary>
+    public event EventHandler<IReadOnlyList<string>>? FilesDropped;
+
+    /// <summary>A waiting file was taken back off the message.</summary>
+    public event EventHandler<string>? AttachmentRemoved;
+
+    /// <summary>The files waiting to go with the next message.</summary>
+    public void ShowAttachments(IReadOnlyList<string> paths)
+    {
+        _pending = [.. paths];
+        _attached.Show(_pending);
+    }
 
     public event EventHandler? CollapsedChanged;
 
@@ -416,7 +439,7 @@ public sealed class ConversationPanel : Border
         });
     }
 
-    public void AddMessage(bool fromUser, string text, bool isError = false, DateTimeOffset? at = null)
+    public void AddMessage(bool fromUser, string text, bool isError = false, DateTimeOffset? at = null, IReadOnlyList<string>? attachments = null)
     {
         _messages.Children.Remove(_empty);
 
@@ -437,14 +460,7 @@ public sealed class ConversationPanel : Border
                 : new SolidColorBrush(isError ? Color.FromArgb(235, 0x3A, 0x12, 0x16) : Color.FromArgb(200, 0x0E, 0x22, 0x28)),
             BorderBrush = _theme.Brush(isError ? _theme.Danger : fromUser ? _theme.Line : _theme.Cool, fromUser ? 0.8 : 0.35),
             BorderThickness = new Thickness(1),
-            Child = new SelectableTextBlock
-            {
-                Text = text,
-                FontSize = 14,
-                LineHeight = 21,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = _theme.Brush(_theme.Text, fromUser ? 0.85 : 0.97),
-            },
+            Child = Content(text, fromUser, attachments),
             Opacity = 0,
             Transitions = [new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(260) }],
         };
@@ -464,6 +480,39 @@ public sealed class ConversationPanel : Border
             DispatcherPriority.Background);
     }
 
+    /// <summary>The words of a message and, under them, small pictures of what came with it.</summary>
+    private Control Content(string text, bool fromUser, IReadOnlyList<string>? attachments)
+    {
+        var words = new SelectableTextBlock
+        {
+            Text = text,
+            FontSize = 14,
+            LineHeight = 21,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = _theme.Brush(_theme.Text, fromUser ? 0.85 : 0.97),
+            IsVisible = text.Length > 0,
+        };
+
+        if (attachments is not { Count: > 0 })
+        {
+            return words;
+        }
+
+        var pictures = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, text.Length > 0 ? 8 : 0, 0, 0) };
+        foreach (var path in attachments)
+        {
+            Control shown = Attachment.Thumbnail(path, 240) is { } picture
+                ? new Image { Source = picture, MaxWidth = 120, MaxHeight = 90, Stretch = Stretch.Uniform }
+                : new TextBlock { Text = "📎 " + Path.GetFileName(path.TrimEnd('\\', '/')), FontSize = 12, Foreground = _theme.Brush(_theme.Muted) };
+
+            var frame = new Border { CornerRadius = new CornerRadius(6), ClipToBounds = true, Margin = new Thickness(0, 0, 6, 6), Child = shown };
+            frame.SetValue(ToolTip.TipProperty, path);
+            pictures.Children.Add(frame);
+        }
+
+        return new StackPanel { Children = { words, pictures } };
+    }
+
     private void OnInputKey(object? sender, KeyEventArgs e)
     {
         switch (e.Key)
@@ -472,15 +521,15 @@ public sealed class ConversationPanel : Border
             case Key.Enter when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
                 break;
 
-            case Key.Enter when string.IsNullOrWhiteSpace(_input.Text) && !HasContext:
+            case Key.Enter when string.IsNullOrWhiteSpace(_input.Text) && !HasContext && _pending.Count == 0:
                 e.Handled = true;
                 break;
 
             case Key.Enter:
-                // A question about something may be just the pointing.
-                var text = string.IsNullOrWhiteSpace(_input.Text) ? "Tell me more about this." : _input.Text.Trim();
+                // A question about something may be just the pointing; a picture may be just the picture.
+                var text = !string.IsNullOrWhiteSpace(_input.Text) ? _input.Text.Trim() : HasContext ? "Tell me more about this." : "";
                 _input.Text = "";
-                AddMessage(fromUser: true, HasContext ? $"About {_contextText.Text}: {text}" : text);
+                AddMessage(fromUser: true, HasContext ? $"About {_contextText.Text}: {text}" : text, attachments: _pending);
                 Submitted?.Invoke(this, text);
                 e.Handled = true;
                 break;

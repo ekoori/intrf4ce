@@ -192,6 +192,12 @@ public sealed class StageSettings
 
     /// <summary>Jump to a new slide as soon as the agent adds it, even mid-narration.</summary>
     public bool FollowAgent { get; set; }
+
+    /// <summary>
+    /// The title, the progress dots and the buttons along the bottom, drawn over the stage.
+    /// Off leaves only the slides — and the subtitles, which are content, not controls.
+    /// </summary>
+    public bool ShowControls { get; set; } = true;
 }
 
 public sealed class LibrarySettings
@@ -339,6 +345,7 @@ public static class SettingsFile
 
         live.Stage.AnimationSpeed = loaded.Stage.AnimationSpeed;
         live.Stage.FollowAgent = loaded.Stage.FollowAgent;
+        live.Stage.ShowControls = loaded.Stage.ShowControls;
 
         // The agent is a process started at launch; the library is the folder decks came from.
         if (live.Agent.Mode != loaded.Agent.Mode || live.Agent.Command != loaded.Agent.Command
@@ -707,6 +714,7 @@ public static class SettingsFile
         stage:
           animation_speed: 1.0    # 0 turns animation off
           follow_agent: false     # jump to each new slide as the agent adds it
+          show_controls: true     # false: only the slides; no title, progress or buttons over them (z)
 
         keys:                     # your own key bindings over the defaults: ? or :help lists them.
                                   # Keys as in vim: gg, G, <Ctrl+d>, <Space>. "" takes a key away.

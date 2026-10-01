@@ -6,7 +6,7 @@ namespace Intrf4ce.Media.Tts;
 /// <param name="AudioPath">An MP3 or WAV file, or null when narration is subtitles only.</param>
 /// <param name="Engine">Which voice made it, for the status line and get_state.</param>
 /// <param name="Billed">Characters this synthesis cost (0 for a cache hit or a free voice).</param>
-/// <param name="Levels">Loudness envelope, one value per <see cref="LevelStep"/>, for the orb.</param>
+/// <param name="Levels">Loudness envelope, one value per <see cref="LevelStep"/>: where the voice starts, stops and pauses.</param>
 public sealed record VoiceClip(
     string? AudioPath,
     SpeechTiming Timing,
@@ -17,18 +17,6 @@ public sealed record VoiceClip(
     public const double LevelStep = 0.05;
 
     public double Duration => Timing.Duration;
-
-    /// <summary>How loud the voice is at <paramref name="seconds"/>, 0 to 1.</summary>
-    public double LevelAt(double seconds)
-    {
-        if (Levels.Count == 0 || seconds < 0)
-        {
-            return 0;
-        }
-
-        var index = (int)(seconds / LevelStep);
-        return index < Levels.Count ? Levels[index] : 0;
-    }
 }
 
 /// <summary>Turns text into a <see cref="VoiceClip"/>.</summary>

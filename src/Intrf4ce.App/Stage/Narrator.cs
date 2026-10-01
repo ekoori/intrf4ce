@@ -29,7 +29,6 @@ public sealed class Narrator
     private readonly AudioSystem _audio;
     private readonly StageController _stage;
     private readonly SubtitleBar _subtitles;
-    private readonly AgentOrb _orb;
     private readonly NarrationSettings _settings;
     private readonly DispatcherTimer _tick;
     private readonly Queue<string> _asides = new();
@@ -46,14 +45,12 @@ public sealed class Narrator
         AudioSystem audio,
         StageController stage,
         SubtitleBar subtitles,
-        AgentOrb orb,
         NarrationSettings settings)
     {
         _voices = voices;
         _audio = audio;
         _stage = stage;
         _subtitles = subtitles;
-        _orb = orb;
         _settings = settings;
         _muted = settings.Muted;
         _audio.Volume = _muted ? 0 : (float)settings.Volume;
@@ -78,11 +75,11 @@ public sealed class Narrator
     public event EventHandler<string>? SlideSpoken;
 
     /// <summary>stopped, idle, preparing, speaking, paused or waiting.</summary>
-    public string State => Held ? "stopped by the user"
+    public string State => _now is { Paused: true } ? "paused"
+        : Held ? "stopped by the user"
         : _waitingForNext ? "waiting for the next slide"
         : _preparing is not null && _now is null ? "preparing the voice"
         : _now is null ? "idle"
-        : _now.Paused ? "paused"
         : "speaking";
 
     public bool IsSpeaking => _now is { Paused: false };
@@ -236,10 +233,16 @@ public sealed class Narrator
         if (_now is { } now)
         {
             now.Paused = !now.Paused;
+
+            // A pause someone asked for holds the presentation, as stop does: the next slide,
+            // reached by hand, waits for play rather than starting to talk over the decision.
+            Held = now.Paused;
             if (now.Paused)
             {
                 now.Clock.Stop();
                 _audio.Pause();
+                _advance?.Dispose();
+                _advance = null;
             }
             else
             {
@@ -402,7 +405,6 @@ public sealed class Narrator
             _audio.Stop();
             _tick.Stop();
             _subtitles.Hide();
-            _orb.Level = 0;
             StateChanged?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -510,7 +512,6 @@ public sealed class Narrator
 
         var offset = Math.Max(0, timing.OffsetAt(t));
         _subtitles.Show(now.Parsed.Text, now.Captions, now.Words, offset);
-        _orb.Level = now.Generation >= 0 ? now.Clip.LevelAt(t) : 0.6;
 
         // Without audio there is no end event; the clock decides.
         if (now.Generation < 0 && t >= timing.Duration)
@@ -568,7 +569,6 @@ public sealed class Narrator
 
         _now = null;
         _tick.Stop();
-        _orb.Level = 0;
         DispatcherTimer.RunOnce(() =>
         {
             if (_now is null)
