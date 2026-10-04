@@ -12,20 +12,10 @@ namespace Intrf4ce.Core.Model;
 /// <para>
 /// Names follow the agent-facing JSON, which is camelCase. Enum-like fields stay strings so
 /// that validation can answer a typo with the list of values that would have worked, which a
-/// converter exception cannot.
+/// converter exception cannot. Which record a <c>"type"</c> becomes is
+/// <see cref="ElementJsonConverter"/>'s to say, so that a plugin's types can exist at all.
 /// </para>
 /// </remarks>
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
-[JsonDerivedType(typeof(TitleElement), "title")]
-[JsonDerivedType(typeof(MarkdownElement), "markdown")]
-[JsonDerivedType(typeof(ImageElement), "image")]
-[JsonDerivedType(typeof(DiagramElement), "diagram")]
-[JsonDerivedType(typeof(MathElement), "math")]
-[JsonDerivedType(typeof(ChartElement), "chart")]
-[JsonDerivedType(typeof(TableElement), "table")]
-[JsonDerivedType(typeof(GalleryElement), "gallery")]
-[JsonDerivedType(typeof(QuizElement), "quiz")]
-[JsonDerivedType(typeof(MapElement), "map")]
 public abstract record Element
 {
     /// <summary>Unique within the slide; generated when the agent leaves it out.</summary>
@@ -233,6 +223,28 @@ public sealed record Place
 
     /// <summary>How close in to go when the narration focuses this place; omit for a sensible one.</summary>
     public double? Zoom { get; init; }
+}
+
+/// <summary>
+/// An element of a type a plugin adds. Its own fields travel exactly as the agent wrote them,
+/// whether or not the plugin is loaded, so a deck made with a plugin opens without it and is
+/// whole again when it is back.
+/// </summary>
+public sealed record PluginElement : Element
+{
+    private static readonly JsonElement NoFields = JsonDocument.Parse("{}").RootElement.Clone();
+
+    /// <summary>The type, as written in <c>"type"</c>.</summary>
+    [JsonIgnore]
+    public string Kind { get; init; } = "";
+
+    /// <summary>Its own fields, as one JSON object: everything but the ones every element has.</summary>
+    [JsonIgnore]
+    public JsonElement Fields { get; init; } = NoFields;
+
+    public override string TypeName => Kind;
+
+    public override bool IsVisual => ElementTypes.Find(Kind)?.IsVisual ?? true;
 }
 
 public sealed record QuizElement : Element

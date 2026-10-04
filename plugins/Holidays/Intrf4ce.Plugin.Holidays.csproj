@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Built in to intrf4ce, and packed exactly as anyone else's plugin would be. -->
+  <PropertyGroup>
+    <RootNamespace>Intrf4ce.Plugin.Holidays</RootNamespace>
+    <PluginId>holidays</PluginId>
+  </PropertyGroup>
+
+</Project>

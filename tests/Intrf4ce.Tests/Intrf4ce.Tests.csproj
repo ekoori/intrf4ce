@@ -28,6 +28,18 @@
     <ProjectReference Include="..\..\src\Intrf4ce.Agent\Intrf4ce.Agent.csproj" />
     <ProjectReference Include="..\..\src\Intrf4ce.Core\Intrf4ce.Core.csproj" />
     <ProjectReference Include="..\..\src\Intrf4ce.Media\Intrf4ce.Media.csproj" />
+    <ProjectReference Include="..\..\src\Intrf4ce.Plugins\Intrf4ce.Plugins.csproj" />
   </ItemGroup>
+
+  <!-- A real plugin package to load: the built-in timezones one, packed as the app packs it. -->
+  <Target Name="CopyTestPlugin" BeforeTargets="BeforeBuild">
+    <MSBuild Projects="..\..\plugins\Timezones\Intrf4ce.Plugin.Timezones.csproj" Targets="PackPlugin" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_TestPlugin" />
+    </MSBuild>
+
+    <ItemGroup>
+      <None Include="@(_TestPlugin)" Link="plugins\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 
 </Project>

@@ -316,6 +316,19 @@
       "annotations": { "readOnlyHint": true }
     },
     {
+      "name": "read_element",
+      "description": "What an element on the stage shows right now, in words. For live elements — the ones plugins add, which keep themselves current: clocks, forecasts, holidays — this is how to say what the slide says: read it just before writing the narration about it, and speak of it as now.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["element"],
+        "properties": {
+          "element": { "type": "string", "description": "The element's id, or slideId.elementId." },
+          "slide": { "type": "string", "description": "A slide id or number; omit for the slide on stage." }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
       "name": "snapshot",
       "description": "See the stage: a PNG of what the user sees, or of one slide. Use it to check a layout you are unsure of; it costs time, so not after every slide.",
       "inputSchema": {

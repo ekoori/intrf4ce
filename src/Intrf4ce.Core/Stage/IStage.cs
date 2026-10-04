@@ -41,6 +41,10 @@ public sealed record PlaybackRequest(
     bool? Muted = null,
     bool? Subtitles = null);
 
+/// <summary>What an element on the stage shows right now, in words.</summary>
+/// <param name="Live">It changes by itself — a plugin's clock or forecast — rather than only when the agent changes it.</param>
+public sealed record ElementReading(string SlideId, string ElementId, string Type, bool Live, string Text);
+
 /// <summary>
 /// The parts of the app only the window can do, as the agent's tools see them.
 /// </summary>
@@ -71,4 +75,10 @@ public interface IStage
 
     /// <summary>Works the controls the user has; returns what the performance is doing now.</summary>
     Task<string> PlaybackAsync(PlaybackRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// What an element shows now, on <paramref name="slideId"/> or the slide on stage; null when
+    /// there is no such element.
+    /// </summary>
+    Task<ElementReading?> ReadElementAsync(string? slideId, string elementId, CancellationToken cancellationToken);
 }

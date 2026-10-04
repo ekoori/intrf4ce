@@ -187,6 +187,9 @@ public sealed class SessionsPanel : Border
     /// <summary>A session was filed under a group (null: taken out of its group).</summary>
     public event EventHandler<(string Id, string? Group)>? Regrouped;
 
+    /// <summary>A session is to be deleted, from its menu.</summary>
+    public event EventHandler<string>? DeleteRequested;
+
     /// <summary>A group was renamed, every session in it with it.</summary>
     public event EventHandler<(string From, string To)>? GroupRenamed;
 
@@ -560,6 +563,12 @@ public sealed class SessionsPanel : Border
             remove.Click += (_, _) => Regrouped?.Invoke(this, (deck.Id, null));
             menu.Items.Add(remove);
         }
+
+        // No "are you sure": u puts it back, as it would in vim, until the app closes.
+        menu.Items.Add(new Separator());
+        var delete = new MenuItem { Header = "Delete  (dd, u to undo)" };
+        delete.Click += (_, _) => DeleteRequested?.Invoke(this, deck.Id);
+        menu.Items.Add(delete);
 
         return menu;
     }

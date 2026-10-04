@@ -2,10 +2,13 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Intrf4ce.App.Hud;
+using Intrf4ce.App.Plugins;
 using Intrf4ce.App.Stage.Elements;
 using Intrf4ce.Core.Commands;
 using Intrf4ce.Core.Input;
 using Intrf4ce.Core.Settings;
+using Intrf4ce.Plugins;
+using Intrf4ce.Plugins.Hosting;
 
 namespace Intrf4ce.App;
 
@@ -48,6 +51,8 @@ public sealed partial class MainWindow
         ("`", "talk"), ("<Enter>", "talk"),
         (":", "prompt"),
         ("n", "new"),
+        ("dd", "delete"),
+        ("u", "undo"),
         (",", "settings"),
         ("?", "help"),
         ("<Esc>", "escape"),
@@ -90,6 +95,17 @@ public sealed partial class MainWindow
             _controller.Deck?.Slides.Select((s, i) => new Completion((i + 1).ToString(CultureInfo.InvariantCulture), s.Title ?? s.Id))
             ?? [];
         _commands.Choices["onoff"] = () => [new("on", ""), new("off", "")];
+        _commands.Choices["plugins"] = () => _plugins.Loaded.Select(p => new Completion(p.Manifest.Id, p.Manifest.Description))
+            .Concat(_settings.Plugins.Disabled.Select(id => new Completion(id, "turned off")));
+        _commands.Choices["plugin-actions"] = () =>
+        [
+            new("install", "a .i4p file: copied into the plugins folder and loaded"),
+            new("enable", "a plugin that was turned off"),
+            new("disable", "turn a plugin off, from the next start"),
+            new("remove", "an installed plugin, from the next start"),
+            new("pack", "a folder with plugin.json into a .i4p: ':plugin pack folder [file]'"),
+            new("folder", "where installed plugins are kept"),
+        ];
         _commands.Choices["scope"] = () => [new("all", "every slide, not just this one")];
     }
 
@@ -315,6 +331,130 @@ public sealed partial class MainWindow
     [Command("new", Description = "An empty stage and a conversation with nothing behind it", Group = "Sessions")]
     internal void CommandNew() => NewSession();
 
+    [Command("plugins", Description = "The plugins loaded, what each adds, and any that would not load", Group = "Plugins")]
+    internal string CommandPlugins()
+    {
+        var lines = _plugins.Loaded
+            .Select(p => $"{p.Manifest.Id} {p.Manifest.Version}{(p.BuiltIn ? ", built in" : "")}: {PluginService.Describe(p)}")
+            .Concat(_plugins.Problems.Select(p => "not loaded: " + p))
+            .ToList();
+
+        if (_settings.Plugins.Disabled is { Count: > 0 } off)
+        {
+            lines.Add("turned off: " + string.Join(", ", off));
+        }
+
+        return lines.Count == 0 ? "no plugins; :plugin install file.i4p adds one" : string.Join("\n", lines);
+    }
+
+    [Command("plugin", Description = "Install, enable, disable, remove or pack a plugin: ':plugin install weather.i4p'", Group = "Plugins")]
+    internal string CommandPlugin([Choices("plugin-actions")] string action, [Choices("plugins")][Rest] string? argument = null)
+    {
+        var what = argument?.Trim().Trim('"') is { Length: > 0 } given ? Environment.ExpandEnvironmentVariables(given) : null;
+        try
+        {
+            return action.ToLowerInvariant() switch
+            {
+                "install" or "load" => _plugins.Install(Path.GetFullPath(what ?? throw new CommandException("which file? :plugin install path/to/plugin.i4p"))),
+                "enable" => EnablePlugin(what ?? throw new CommandException("which plugin? :plugins lists them")),
+                "disable" => DisablePlugin(what ?? throw new CommandException("which plugin? :plugins lists them")),
+                "remove" => _plugins.Remove(what ?? throw new CommandException("which plugin? :plugins lists them")),
+                "pack" => PackPlugin(what ?? throw new CommandException("which folder? :plugin pack folder [file]")),
+                "folder" => Shell.Open(Directory.CreateDirectory(_plugins.Folder).FullName) is { } error ? throw new CommandException(error) : $"opened {_plugins.Folder}",
+                _ => throw new CommandException($"'{action}' is not something :plugin does; it can install, enable, disable, remove, pack or show the folder"),
+            };
+        }
+        catch (PluginException ex)
+        {
+            throw new CommandException(ex.Message);
+        }
+    }
+
+    /// <summary>Turns a plugin on in settings.yaml and loads it now, if it is not loaded already.</summary>
+    private string EnablePlugin(string id)
+    {
+        if (_settings.Plugins.Disabled.Remove(id))
+        {
+            WriteDisabledPlugins();
+        }
+
+        return _plugins.LoadNow(id);
+    }
+
+    /// <summary>Turns a plugin off in settings.yaml; what it added stays until the next start.</summary>
+    private string DisablePlugin(string id)
+    {
+        if (!_plugins.Loaded.Any(p => p.Manifest.Id == id) && !_settings.Plugins.Disabled.Contains(id))
+        {
+            throw new CommandException($"there is no plugin '{id}'; :plugins lists them");
+        }
+
+        if (!_settings.Plugins.Disabled.Contains(id))
+        {
+            _settings.Plugins.Disabled.Add(id);
+            WriteDisabledPlugins();
+        }
+
+        return $"{id} is turned off; what it added goes when intrf4ce starts again";
+    }
+
+    /// <summary>Packs a plugin's folder — its build output will do — into a file to install or give away.</summary>
+    private static string PackPlugin(string arguments)
+    {
+        // A folder, and optionally where the file goes; a path with spaces is quoted.
+        var parts = CommandRegistry.Tokenize(arguments).Select(t => t.Text).ToList();
+        var (manifest, file) = PluginPackage.PackFolder(parts[0], parts.Count > 1 ? parts[1] : null);
+        return $"packed {manifest.Name} {manifest.Version} into {file}";
+    }
+
+    /// <summary>The plugins turned off, into settings.yaml; a failure is the command's to report.</summary>
+    private void WriteDisabledPlugins()
+    {
+        if (SettingsFile.WriteDisabledPlugins(_paths.SettingsFile, _settings.Plugins.Disabled) is { } error)
+        {
+            throw new CommandException(error);
+        }
+
+        Log.Write($"settings: plugins.disabled = [{string.Join(", ", _settings.Plugins.Disabled)}]");
+    }
+
+    /// <summary>
+    /// Each plugin's ready-made requests, as commands: <c>:weather Zagreb</c> says what the
+    /// plugin wrote, with Zagreb in it, as if typed.
+    /// </summary>
+    private void RegisterPluginPrompts()
+    {
+        foreach (var (plugin, prompt) in _plugins.Prompts)
+        {
+            if (!_promptCommands.Add(prompt.Name))
+            {
+                continue;
+            }
+
+            if (_commands.Find(prompt.Name) is not null)
+            {
+                Log.Write($"plugin {plugin.Id}: its prompt '{prompt.Name}' would hide the command of that name, so it is not one");
+                continue;
+            }
+
+            var command = new PromptCommand(prompt, Say);
+            _commands.Add(new CommandInfo(
+                prompt.Name,
+                [],
+                $"{prompt.Description} ({plugin.Name})",
+                "From plugins",
+                typeof(PromptCommand).GetMethod(nameof(PromptCommand.Run))!,
+                command));
+        }
+    }
+
+    [Command("delete", Aliases = ["rm"], Description = "Delete this session, or the one named, with everything in it; u brings it back until intrf4ce closes", Group = "Sessions")]
+    internal string CommandDelete([Choices("sessions")] string? session = null) =>
+        DeleteSession(session ?? _decks.Current?.Id ?? throw new CommandException("no session is open; :delete <session> deletes another"));
+
+    [Command("undo", Description = "Bring back the session deleted last", Group = "Sessions")]
+    internal string CommandUndo() => UndoDelete();
+
     [Command("open", Description = "Open a session by id", Group = "Sessions")]
     internal void CommandOpen([Choices("sessions")] string session) => OpenDeck(session);
 
@@ -480,4 +620,15 @@ public sealed partial class MainWindow
         "off" or "false" or "no" or "0" => false,
         _ => throw new CommandException($"'{state}' is not on or off"),
     };
+}
+
+/// <summary>A plugin's ready-made request, run as a command: what it says, said.</summary>
+internal sealed class PromptCommand(PluginPrompt prompt, Action<string> say)
+{
+    /// <summary>Says the request, with whatever was typed after the command in it.</summary>
+    public string Run([Rest] string? text = null)
+    {
+        say(prompt.Said(text));
+        return "";
+    }
 }

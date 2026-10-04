@@ -1,0 +1,17 @@
+{
+  "id": "weather",
+  "name": "Weather",
+  "version": "1.0.0",
+  "description": "The weather anywhere, kept current while the slide is up: now, the coming days, the 72-hour trend, the UV peak, sunrise and sunset. From Open-Meteo, which needs no key.",
+  "author": "intrf4ce (from Kompas)",
+  "api": 1,
+  "entry": "Intrf4ce.Plugin.Weather.dll",
+  "prompts": [
+    {
+      "name": "weather",
+      "description": "The weather somewhere, on the stage",
+      "text": "Put the weather for {args} on a slide, and tell me in a sentence or two what it is doing now and what the next few days look like.",
+      "default": "where I am (my settings say, or ask me)"
+    }
+  ]
+}

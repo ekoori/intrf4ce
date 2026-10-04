@@ -51,7 +51,7 @@ public class DeckJsonTests
     {
         const string json = """{"type":"image","id":"k","src":"a.png","callout":[]}""";
 
-        var ex = Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<Element>(json, DeckJson.Options));
+        var ex = Assert.ThrowsAny<JsonException>(() => JsonSerializer.Deserialize<Element>(json, DeckJson.Options));
 
         Assert.Contains("callout", ex.Message, StringComparison.Ordinal);
     }

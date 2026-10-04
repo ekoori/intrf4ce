@@ -1,0 +1,21 @@
+<Project>
+
+  <!-- The repository's settings first: the same compiler, analysers and warnings as the app. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    A plugin is built against intrf4ce's plugin contract and Avalonia, and the app supplies
+    both when it loads the plugin: neither belongs in the plugin's output, nor anything they
+    bring with them.
+  -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" PrivateAssets="all" ExcludeAssets="runtime" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../src/Intrf4ce.Plugins/Intrf4ce.Plugins.csproj" Private="false" />
+  </ItemGroup>
+
+</Project>

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -29,6 +32,8 @@ public sealed class AppSettings
     public StageSettings Stage { get; set; } = new();
 
     public LibrarySettings Library { get; set; } = new();
+
+    public PluginsSettings Plugins { get; set; } = new();
 
     /// <summary>
     /// The user's own key bindings, over the ones intrf4ce ships: keys to a command, as typed
@@ -222,6 +227,48 @@ public sealed class LibrarySettings
 /// <param name="Warnings">Settings that were not understood and so had no effect, by line.</param>
 public sealed record SettingsLoad(AppSettings Settings, string? Error, IReadOnlyList<string>? Warnings = null);
 
+/// <summary>Which plugins load, and what each falls back on when the agent does not say.</summary>
+public sealed class PluginsSettings
+{
+    /// <summary>Ids of plugins not to load, built in or installed. Takes effect on the next start.</summary>
+    public List<string> Disabled { get; set; } = [];
+
+    /// <summary>Plugin files to load from where they are, without installing them: for working on one.</summary>
+    public List<string> Load { get; set; } = [];
+
+    /// <summary>
+    /// Each plugin's own settings, under its id: <c>weather: { place: Zagreb }</c>. What they
+    /// mean is the plugin's business; its prompt tells the agent.
+    /// </summary>
+    public Dictionary<string, Dictionary<string, object>> Options { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// One plugin's settings as a JSON object, which is how a plugin reads them; empty when it
+    /// has none.
+    /// </summary>
+    /// <remarks>
+    /// YAML says nothing about whether <c>3</c> is a number or <c>true</c> a flag, so a scalar
+    /// that reads as one is given as one.
+    /// </remarks>
+    public JsonElement OptionsFor(string pluginId)
+    {
+        var options = Options.GetValueOrDefault(pluginId);
+        var json = options is null ? new JsonObject() : Convert(options);
+        return JsonSerializer.SerializeToElement(json);
+
+        static JsonNode? Convert(object? value) => value switch
+        {
+            null => null,
+            IDictionary<string, object> map => new JsonObject(map.Select(p => KeyValuePair.Create(p.Key, Convert(p.Value)))),
+            IDictionary<object, object> map => new JsonObject(map.Select(p => KeyValuePair.Create(p.Key.ToString() ?? "", Convert(p.Value)))),
+            IEnumerable<object> list => new JsonArray([.. list.Select(Convert)]),
+            string text when bool.TryParse(text, out var flag) => JsonValue.Create(flag),
+            string text when double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) => JsonValue.Create(number),
+            _ => JsonValue.Create(value.ToString()),
+        };
+    }
+}
+
 public static class SettingsFile
 {
     private static readonly IDeserializer Reader = new DeserializerBuilder()
@@ -364,6 +411,14 @@ public static class SettingsFile
 
         live.Library.CopyMedia = loaded.Library.CopyMedia;
         live.Keys = new Dictionary<string, string>(loaded.Keys, StringComparer.Ordinal);
+
+        // A plugin's code is loaded once and stays; its settings it reads afresh each time.
+        if (!live.Plugins.Disabled.SequenceEqual(loaded.Plugins.Disabled) || !live.Plugins.Load.SequenceEqual(loaded.Plugins.Load))
+        {
+            later.Add("plugins");
+        }
+
+        live.Plugins.Options = loaded.Plugins.Options;
 
         return later;
     }
@@ -519,6 +574,30 @@ public static class SettingsFile
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var text = File.Exists(path) ? File.ReadAllText(path) : DefaultText;
             File.WriteAllText(path, Bind(text, keys, command));
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"settings.yaml could not be written: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Writes the plugins not to load, as one line: <c>disabled: [weather, holidays]</c>. Not a
+    /// setting the panel or the agent can change, so it is not in the schema; <c>:plugin</c>
+    /// writes it, through the same line edit that leaves the rest of the file alone.
+    /// </summary>
+    /// <returns>An error in words, or null when it was written.</returns>
+    public static string? WriteDisabledPlugins(string path, IEnumerable<string> ids)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentNullException.ThrowIfNull(ids);
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var text = File.Exists(path) ? File.ReadAllText(path) : DefaultText;
+            File.WriteAllText(path, Set(text, "plugins.disabled", "[" + string.Join(", ", ids) + "]"));
             return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -725,5 +804,13 @@ public static class SettingsFile
           folder: ""              # where sessions live; empty for "sessions" beside intrf4ce
           copy_media: false       # true copies images from this machine into the session, so it
                                   # can be moved elsewhere; off keeps a reference to where they are
+
+        plugins:                  # :plugins lists them; :plugin install file.i4p adds one
+          disabled: []            # ids not to load, built in or installed, e.g. [holidays]; needs a restart
+          load: []                # .i4p files to load from where they are, while you work on one
+          options:                # each plugin's own settings: what it falls back on when the agent does not say
+            # timezones: { zones: [Australia/Melbourne, Europe/Zagreb] }
+            # weather: { place: Melbourne }
+            # holidays: { country: AU, region: VIC }
         """;
 }

@@ -175,6 +175,107 @@ public sealed class DeckStore
     /// <summary>A group name as stored: trimmed, and null for nothing.</summary>
     public static string? Group(string? name) => string.IsNullOrWhiteSpace(name) ? null : name.Trim();
 
+    /// <summary>
+    /// Where deleted sessions wait until the app closes. A dot folder, so it can never be
+    /// mistaken for a session: ids are letters, digits, '_' and '-'.
+    /// </summary>
+    public string TrashFolder => Path.Combine(Root, ".trash");
+
+    /// <summary>
+    /// Takes a session off the list by moving its folder into the trash, whole.
+    /// </summary>
+    /// <returns>The trash entry it went into, for <see cref="RestoreFromTrash"/>.</returns>
+    /// <exception cref="FileNotFoundException">There is no such session.</exception>
+    public string MoveToTrash(string deckId)
+    {
+        var folder = FolderOf(deckId);
+        if (!SpecValidator.IsValidId(deckId) || !File.Exists(Path.Combine(folder, DeckFile)))
+        {
+            throw new FileNotFoundException($"There is no session '{deckId}' in {Root}.", folder);
+        }
+
+        var entry = Path.Combine(TrashFolder, $"{DateTime.UtcNow:yyyyMMddHHmmssfff}-{deckId}");
+        Directory.CreateDirectory(entry);
+        Directory.Move(folder, Path.Combine(entry, "deck"));
+        return entry;
+    }
+
+    /// <summary>
+    /// Puts a session back from the trash, under its old id or, if a new session has taken
+    /// that since, the next free one.
+    /// </summary>
+    /// <returns>The id it is back under.</returns>
+    public string RestoreFromTrash(string entry)
+    {
+        var name = Path.GetFileName(entry);
+        var stem = name[(name.IndexOf('-', StringComparison.Ordinal) + 1)..];
+        var id = stem;
+        for (var n = 2; Directory.Exists(FolderOf(id)); n++)
+        {
+            id = $"{stem}-{n}";
+        }
+
+        Directory.Move(Path.Combine(entry, "deck"), FolderOf(id));
+        return id;
+    }
+
+    /// <summary>
+    /// Moves a file or folder from anywhere into <paramref name="folder"/>, across drives if
+    /// need be: something that belongs with a session but lives elsewhere, like the agent's
+    /// transcript of it.
+    /// </summary>
+    /// <returns>Where it is now.</returns>
+    public static string MoveInto(string path, string folder)
+    {
+        Directory.CreateDirectory(folder);
+        var target = Path.Combine(folder, Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+        Move(path, target);
+        return target;
+    }
+
+    /// <summary>Moves a file or a folder, copying and deleting when a plain move cannot cross drives.</summary>
+    public static void Move(string from, string to)
+    {
+        if (File.Exists(from))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Move(from, to);
+            return;
+        }
+
+        try
+        {
+            Directory.Move(from, to);
+        }
+        catch (IOException) when (Path.GetPathRoot(Path.GetFullPath(from)) != Path.GetPathRoot(Path.GetFullPath(to)))
+        {
+            foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+            {
+                var copy = Path.Combine(to, Path.GetRelativePath(from, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+                File.Copy(file, copy);
+            }
+
+            Directory.Delete(from, recursive: true);
+        }
+    }
+
+    /// <summary>Deletes everything in the trash for good: on the way out, and on the way in after a crash.</summary>
+    public void EmptyTrash()
+    {
+        try
+        {
+            if (Directory.Exists(TrashFolder))
+            {
+                Directory.Delete(TrashFolder, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A file held open by something else; the next start tries again.
+        }
+    }
+
     /// <summary>The absolute path of an asset recorded in the deck, if the file is there.</summary>
     public string? ResolveAsset(Deck deck, string source)
     {

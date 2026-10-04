@@ -111,6 +111,29 @@ public sealed class CommandRegistry
         }
     }
 
+    /// <summary>
+    /// Adds one command made at run time — a plugin's ready-made request — rather than found on
+    /// an object's methods.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A command of that name exists.</exception>
+    public void Add(CommandInfo command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        foreach (var name in command.Aliases.Prepend(command.Name))
+        {
+            if (_byName.ContainsKey(name))
+            {
+                throw new InvalidOperationException($"the command '{name}' exists already");
+            }
+        }
+
+        foreach (var name in command.Aliases.Prepend(command.Name))
+        {
+            _byName[name] = command;
+        }
+    }
+
     public CommandInfo? Find(string name) => _byName.GetValueOrDefault(name);
 
     /// <summary>

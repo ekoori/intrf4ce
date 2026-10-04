@@ -35,6 +35,7 @@ public static class DeckJson
             WriteIndented = indented,
             // Narration is full of apostrophes and quotes; escaping them makes deck.json unreadable.
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            Converters = { new ElementJsonConverter() },
         };
 
         options.MakeReadOnly(populateMissingResolver: true);

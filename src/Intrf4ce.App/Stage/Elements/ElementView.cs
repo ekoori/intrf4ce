@@ -11,12 +11,14 @@ namespace Intrf4ce.App.Stage.Elements;
 
 /// <summary>What every element view needs from the rest of the app.</summary>
 /// <param name="Publish">Tells the agent something the user did (type, text, routing details).</param>
+/// <param name="Plugins">What draws the element types plugins add; null where there are none, as in the self-test.</param>
 public sealed record ElementContext(
     Skin Skin,
     IRenderService Renderer,
     ImageLoader Images,
     TileSource Tiles,
-    Action<string, string, IReadOnlyDictionary<string, string>> Publish);
+    Action<string, string, IReadOnlyDictionary<string, string>> Publish,
+    Plugins.PluginService? Plugins = null);
 
 /// <summary>
 /// The on-stage view of one element: loads its content, reports whether that worked, and

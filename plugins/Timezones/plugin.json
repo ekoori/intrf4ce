@@ -1,0 +1,17 @@
+{
+  "id": "timezones",
+  "name": "Time zones",
+  "version": "1.0.0",
+  "description": "A day of hours across several places: what time it is in each, whether it is a reasonable hour to call, and when the clocks change.",
+  "author": "intrf4ce (from Kompas)",
+  "api": 1,
+  "entry": "Intrf4ce.Plugin.Timezones.dll",
+  "prompts": [
+    {
+      "name": "time",
+      "description": "The time across places, on the stage",
+      "text": "Put a timezones element on a slide showing {args}, and tell me briefly what time it is in each place and when it would be sensible to call.",
+      "default": "the places in my settings, or here and wherever we last talked about"
+    }
+  ]
+}

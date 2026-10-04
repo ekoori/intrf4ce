@@ -31,6 +31,7 @@ public sealed class PresenterTools : IToolDispatcher
     private readonly IMediaTools _media;
     private readonly ISettingsAccess _settings;
     private readonly IReadOnlyDictionary<string, Func<JsonObject, McpSession?, CancellationToken, Task<ToolResult>>> _handlers;
+    private IReadOnlyDictionary<string, PluginToolHandler> _pluginTools = new Dictionary<string, PluginToolHandler>();
 
     public PresenterTools(DeckService decks, IStage stage, EventHub events, IMediaTools media, ISettingsAccess settings)
     {
@@ -64,19 +65,83 @@ public sealed class PresenterTools : IToolDispatcher
             ["describe_deck"] = (a, _, _) => Task.FromResult(DescribeDeck(a)),
             ["group_decks"] = (a, _, _) => Task.FromResult(GroupDecks(a)),
             ["rename_group"] = (a, _, _) => Task.FromResult(RenameGroup(a)),
+            ["read_element"] = (a, _, c) => ReadElementAsync(a, c),
         };
     }
 
+    /// <summary>intrf4ce's own tools; the ones plugins add are not among them.</summary>
     public IReadOnlyCollection<string> Implemented => [.. _handlers.Keys];
+
+    /// <summary>Replaces the tools plugins add, by name.</summary>
+    public void SetPluginTools(IReadOnlyDictionary<string, PluginToolHandler> tools) =>
+        Volatile.Write(ref _pluginTools, tools ?? throw new ArgumentNullException(nameof(tools)));
 
     public Task<ToolResult> CallAsync(string name, JsonObject arguments, McpSession session, CancellationToken cancellationToken) =>
         CallAsync(name, arguments, cancellationToken, session);
 
     /// <summary>The same, without a session: for tests and the in-process self-test.</summary>
     public Task<ToolResult> CallAsync(string name, JsonObject arguments, CancellationToken cancellationToken, McpSession? session = null) =>
-        _handlers.TryGetValue(name, out var handler)
-            ? handler(arguments, session, cancellationToken)
-            : Task.FromResult(ToolResult.Error($"intrf4ce has no tool '{name}'"));
+        _handlers.TryGetValue(name, out var handler) ? handler(arguments, session, cancellationToken)
+        : Volatile.Read(ref _pluginTools).TryGetValue(name, out var plugin) ? CallPluginAsync(plugin, arguments, cancellationToken)
+        : Task.FromResult(ToolResult.Error($"intrf4ce has no tool '{name}'"));
+
+    /// <summary>A plugin's tool: its answer as it gave it, or what went wrong in words.</summary>
+    private static async Task<ToolResult> CallPluginAsync(PluginToolHandler tool, JsonObject arguments, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return ToolResult.Ok(await tool.Run(arguments, cancellationToken).ConfigureAwait(false));
+        }
+        catch (ArgumentException ex)
+        {
+            return ToolResult.Error(ex.Message);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Somebody else's code, so anything at all; it is the agent's to hear, not the session's to die of.
+            return ToolResult.Error($"the {tool.Plugin} plugin could not answer: {ex.Message}");
+        }
+    }
+
+    private async Task<ToolResult> ReadElementAsync(JsonObject arguments, CancellationToken cancellationToken)
+    {
+        var element = RequireString(arguments, "element");
+        var slide = OptionalString(arguments, "slide");
+
+        // slide.element, as focus targets are written.
+        if (slide is null && element.Split('.') is [var before, var after])
+        {
+            (slide, element) = (before, after);
+        }
+
+        if (slide is not null && int.TryParse(slide, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
+            && _decks.Current is { } deck && n >= 1 && n <= deck.Count)
+        {
+            slide = deck.Slides[n - 1].Id;
+        }
+
+        var reading = await _stage.ReadElementAsync(slide, element, cancellationToken).ConfigureAwait(false);
+        if (reading is null)
+        {
+            return ToolResult.Error($"there is no element '{element}' on {(slide is null ? "the slide on stage" : $"slide '{slide}'")}; get_state lists them");
+        }
+
+        return ToolResult.Json(new
+        {
+            slide = reading.SlideId,
+            element = reading.ElementId,
+            type = reading.Type,
+            live = reading.Live,
+            shows = reading.Text,
+            note = reading.Live
+                ? "This changes by itself; read it again just before narrating it, and say it as of now."
+                : "This shows what the slide says; it changes only when the slide does.",
+        });
+    }
 
     private ToolResult GetState()
     {
@@ -656,6 +721,13 @@ public sealed class PresenterTools : IToolDispatcher
         catch (JsonException ex)
         {
             var path = ex.Path is { Length: > 1 } p ? what + p.TrimStart('$') : what;
+
+            // Inside an element, the serializer knows only the element; the rest of the way in is kept beside it.
+            if (ex is ElementJsonException { Inner.Length: > 0 } inside)
+            {
+                path += inside.Inner.StartsWith('[') ? inside.Inner : "." + inside.Inner;
+            }
+
             throw new ToolInputException($"{path}: {Explain(ex)}");
         }
     }
@@ -671,11 +743,6 @@ public sealed class PresenterTools : IToolDispatcher
             var end = start < 0 ? -1 : message.IndexOf('\'', start + 1);
             var property = start >= 0 && end > start ? message[(start + 1)..end] : "a property";
             return $"unknown property '{property}' for this element type; check the spelling and the type's fields in the tool description";
-        }
-
-        if (message.Contains("type discriminator", StringComparison.OrdinalIgnoreCase))
-        {
-            return "every element needs \"type\": one of title, markdown, image, diagram, math, chart, table, gallery, quiz";
         }
 
         var cut = message.IndexOf(" Path:", StringComparison.Ordinal);
@@ -721,3 +788,6 @@ public sealed class PresenterTools : IToolDispatcher
             _ => throw new ToolInputException($"{name} must be a string"),
         };
 }
+
+/// <summary>A tool a plugin answers: which plugin, and how.</summary>
+public sealed record PluginToolHandler(string Plugin, Func<JsonObject, CancellationToken, Task<string>> Run);

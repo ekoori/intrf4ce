@@ -1,0 +1,17 @@
+{
+  "id": "holidays",
+  "name": "Public holidays",
+  "version": "1.0.0",
+  "description": "The next public holidays in any country Nager.Date covers, with the regions each applies in and how soon it is. Kept current; needs no key.",
+  "author": "intrf4ce (from Kompas)",
+  "api": 1,
+  "entry": "Intrf4ce.Plugin.Holidays.dll",
+  "prompts": [
+    {
+      "name": "holidays",
+      "description": "The next public holidays, on the stage",
+      "text": "Put the next public holidays for {args} on a slide, and tell me which ones are soon and which apply to me.",
+      "default": "where I live (my settings say, or this machine's region)"
+    }
+  ]
+}

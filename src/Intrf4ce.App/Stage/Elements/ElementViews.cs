@@ -22,10 +22,11 @@ public static class ElementViews
         GalleryElement gallery => new GalleryView(context, gallery),
         QuizElement quiz => new QuizView(context, quiz),
         MapElement map => new MapView(context, map),
+        PluginElement plugin => new PluginElementView(context, plugin),
         _ => new PlaceholderView(context, element),
     };
 
     /// <summary>Whether an existing view can take a new version of the element, or must be replaced.</summary>
     public static bool CanReuse(ElementView view, Element element) =>
-        view.Element.GetType() == element.GetType();
+        view.Element.GetType() == element.GetType() && view.Element.TypeName == element.TypeName;
 }

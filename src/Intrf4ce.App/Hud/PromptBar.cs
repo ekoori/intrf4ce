@@ -290,7 +290,7 @@ public sealed class PromptBar : Panel
             {
                 _message.IsVisible = false;
             }
-        }, TimeSpan.FromSeconds(error ? 7 : 4));
+        }, TimeSpan.FromSeconds((error ? 7 : 4) + (2.5 * text.Count(c => c == '\n'))));
     }
 
     private void Fit()

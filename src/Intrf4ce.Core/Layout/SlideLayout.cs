@@ -235,6 +235,7 @@ public static class SlideLayout
         QuizElement => 1.1,
         TableElement => 1.2,
         MarkdownElement => 1,
+        PluginElement { IsVisual: false } => 1,
         _ => 1.6,
     };
 }

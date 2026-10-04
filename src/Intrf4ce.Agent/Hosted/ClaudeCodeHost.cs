@@ -86,6 +86,37 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
 
     public string? SessionId { get; private set; }
 
+    /// <summary>Where the agent runs: the settings' folder, or one of intrf4ce's own.</summary>
+    public string WorkingDirectory =>
+        _options.Settings.WorkingDirectory is { Length: > 0 } folder ? folder : Path.Combine(_options.Home, "work");
+
+    /// <summary>
+    /// What Claude Code keeps of <paramref name="session"/>: its transcript, and the folder
+    /// beside it that some versions keep a session's side conversations in — whichever exist.
+    /// </summary>
+    /// <remarks>
+    /// Claude Code files a session under its working folder's path with every character that is
+    /// not a letter or digit made a hyphen. Only a session id that is a GUID is looked for, so a
+    /// hand-edited deck cannot point this anywhere else.
+    /// </remarks>
+    public IReadOnlyList<string> TranscriptOf(string? session)
+    {
+        if (!Guid.TryParse(session, out var id))
+        {
+            return [];
+        }
+
+        var config = Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR") is { Length: > 0 } dir
+            ? dir
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
+        var project = string.Concat(Path.GetFullPath(WorkingDirectory).Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-'));
+        var folder = Path.Combine(config, "projects", project);
+        var name = id.ToString("D", CultureInfo.InvariantCulture);
+
+        return [.. new[] { Path.Combine(folder, name + ".jsonl"), Path.Combine(folder, name) }
+            .Where(p => File.Exists(p) || Directory.Exists(p))];
+    }
+
     public string? Model { get; private set; }
 
     public double Cost { get; private set; }
@@ -339,7 +370,7 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
     private ProcessStartInfo BuildStart(string executable, string? resumeSession)
     {
         var settings = _options.Settings;
-        var workingDirectory = settings.WorkingDirectory is { Length: > 0 } wd ? wd : Path.Combine(_options.Home, "work");
+        var workingDirectory = WorkingDirectory;
         Directory.CreateDirectory(workingDirectory);
 
         var mcpConfig = Path.Combine(_options.Home, "mcp.json");

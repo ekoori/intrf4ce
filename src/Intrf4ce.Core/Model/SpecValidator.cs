@@ -207,8 +207,70 @@ public static partial class SpecValidator
             MapElement map => ElementParts.Places(map.Places ?? []).ToList(),
             MarkdownElement => null,
             DiagramElement => null,
+            // Its parts are the plugin's to say, once the element is on the stage.
+            PluginElement => null,
             _ => [],
         };
+    }
+
+    /// <summary>
+    /// A plugin's element: a type some loaded plugin has, only the fields it takes, the ones it
+    /// needs, and whatever its plugin says about them.
+    /// </summary>
+    private static void ValidatePlugin(PluginElement element, string path, List<SpecIssue> issues)
+    {
+        if (ElementTypes.Find(element.Kind) is not { } type)
+        {
+            Error(issues, path + ".type", $"unknown element type '{element.Kind}'; use one of {List(ElementTypes.Names)}");
+            return;
+        }
+
+        if (element.Fields.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var takes = type.Fields.Select(f => f.Key).ToList();
+        foreach (var field in element.Fields.EnumerateObject().Where(f => !takes.Contains(f.Name)))
+        {
+            Error(issues, $"{path}.{field.Name}",
+                $"unknown property '{field.Name}' for {type.Name}; it takes {(takes.Count == 0 ? "nothing of its own" : List(takes))}");
+        }
+
+        foreach (var required in type.Required.Where(r => !element.Fields.TryGetProperty(r, out _)))
+        {
+            Error(issues, $"{path}.{required}", $"{type.Name} needs {required}");
+        }
+
+        if (type.Check is not { } check)
+        {
+            return;
+        }
+
+        List<ExtraElementIssue> found;
+        try
+        {
+            found = [.. check(element.Fields)];
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Somebody else's code: a check that throws is a warning, not a lost slide.
+            Warn(issues, path, $"the {type.Plugin} plugin could not check this element: {ex.Message}");
+            return;
+        }
+
+        foreach (var issue in found)
+        {
+            var where = string.IsNullOrEmpty(issue.Field) ? path : $"{path}.{issue.Field}";
+            if (issue.IsWarning)
+            {
+                Warn(issues, where, issue.Message);
+            }
+            else
+            {
+                Error(issues, where, issue.Message);
+            }
+        }
     }
 
     private static void ValidateSize(Slide slide, List<SpecIssue> issues)
@@ -264,6 +326,10 @@ public static partial class SpecValidator
     {
         switch (element)
         {
+            case PluginElement plugin:
+                ValidatePlugin(plugin, path, issues);
+                break;
+
             case TitleElement title:
                 Required(issues, path + ".text", title.Text);
                 break;

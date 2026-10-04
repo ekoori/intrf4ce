@@ -68,6 +68,7 @@ public sealed class McpSession : IAsyncDisposable
         _log = log;
         _firstLine = firstLine;
         Id = Interlocked.Increment(ref _nextId);
+        _catalog.Changed += OnCatalogChanged;
     }
 
     public int Id { get; }
@@ -117,6 +118,7 @@ public sealed class McpSession : IAsyncDisposable
         }
         finally
         {
+            _catalog.Changed -= OnCatalogChanged;
             foreach (var running in _running.Values)
             {
                 await running.CancelAsync().ConfigureAwait(false);
@@ -124,6 +126,21 @@ public sealed class McpSession : IAsyncDisposable
 
             Closed?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    /// <summary>A plugin came or went: the client asks for the list again when told it changed.</summary>
+    private void OnCatalogChanged(object? sender, EventArgs e)
+    {
+        if (!IsInitialized || _lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _ = NotifyAsync("notifications/tools/list_changed", []).ContinueWith(
+            t => _log($"session {Id}: could not say the tools changed: {t.Exception?.GetBaseException().Message}"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
     }
 
     /// <summary>Sends a notification, such as a Claude Code channel event.</summary>
@@ -237,7 +254,7 @@ public sealed class McpSession : IAsyncDisposable
             Client = $"{client["name"]?.GetValue<string>() ?? "?"} {client["version"]?.GetValue<string>() ?? ""}".Trim();
         }
 
-        var capabilities = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } };
+        var capabilities = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = true } };
         if (Kind == SessionKind.Channel)
         {
             capabilities["experimental"] = new JsonObject { ["claude/channel"] = new JsonObject() };

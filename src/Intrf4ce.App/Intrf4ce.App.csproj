@@ -69,10 +69,36 @@
     </ItemGroup>
   </Target>
 
+  <!--
+    The built-in plugins. Each is built through its own PackPlugin target and the package that
+    makes is carried inside the executable, then loaded at startup exactly as an installed one
+    is: what ships with intrf4ce is proof of what anyone else's plugin can do. They are built
+    without the publish's runtime and single-file settings, which are the app's, not theirs.
+  -->
+  <ItemGroup>
+    <BuiltInPlugin Include="..\..\plugins\Timezones\Intrf4ce.Plugin.Timezones.csproj" />
+    <BuiltInPlugin Include="..\..\plugins\Weather\Intrf4ce.Plugin.Weather.csproj" />
+    <BuiltInPlugin Include="..\..\plugins\Holidays\Intrf4ce.Plugin.Holidays.csproj" />
+  </ItemGroup>
+
+  <Target Name="EmbedBuiltInPlugins" BeforeTargets="BeforeBuild">
+    <MSBuild Projects="@(BuiltInPlugin)"
+             Targets="PackPlugin"
+             Properties="Configuration=$(Configuration)"
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed;PublishDir;OutputPath;OutDir;_IsPublishing;IncludeNativeLibrariesForSelfExtract;EnableCompressionInSingleFile">
+      <Output TaskParameter="TargetOutputs" ItemName="_BuiltInPluginPackage" />
+    </MSBuild>
+
+    <ItemGroup>
+      <EmbeddedResource Include="@(_BuiltInPluginPackage)" LogicalName="plugins/%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\Intrf4ce.Agent\Intrf4ce.Agent.csproj" />
     <ProjectReference Include="..\Intrf4ce.Core\Intrf4ce.Core.csproj" />
     <ProjectReference Include="..\Intrf4ce.Media\Intrf4ce.Media.csproj" />
+    <ProjectReference Include="..\Intrf4ce.Plugins\Intrf4ce.Plugins.csproj" />
   </ItemGroup>
 
 </Project>

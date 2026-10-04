@@ -36,6 +36,21 @@ public static class Program
                 ModeArgument = Path.GetFullPath(directory);
                 break;
 
+            // For whoever writes a plugin: its build output folder in, an .i4p out.
+            case ["--pack-plugin", var folder, ..]:
+                UseParentConsole();
+                try
+                {
+                    var (manifest, file) = Intrf4ce.Plugins.Hosting.PluginPackage.PackFolder(folder, args.Length > 2 ? args[2] : null);
+                    Console.WriteLine($"packed {manifest.Id} {manifest.Version} into {file}");
+                    return 0;
+                }
+                catch (Exception ex) when (ex is Intrf4ce.Plugins.PluginException or IOException or UnauthorizedAccessException)
+                {
+                    Console.Error.WriteLine(ex.Message);
+                    return 1;
+                }
+
             case ["--version", ..]:
                 UseParentConsole();
                 Console.WriteLine(typeof(Program).Assembly.GetName().Version);

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What a plugin is built against, and the code that reads and loads one. Avalonia and this
+    are all a plugin shares with the app: everything else of intrf4ce's is out of its reach,
+    so the app can change without breaking the plugins people have.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Intrf4ce.Plugins</RootNamespace>
+    <AssemblyName>Intrf4ce.Plugins</AssemblyName>
+    <!-- Changes only when the contract does, so a plugin built against 1.0 keeps binding. -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+
+</Project>

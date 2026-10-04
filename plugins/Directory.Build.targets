@@ -1,0 +1,32 @@
+<Project>
+
+  <!--
+    Every build of a plugin ends in its package, $(OutDir)$(PluginId).i4p: the plugin's own
+    assembly and symbols, plugin.json and prompt.md, and whatever it lists as PluginContent —
+    nothing the app brings. The app builds the built-in ones through this target and carries
+    the files it returns inside the executable.
+  -->
+  <PropertyGroup>
+    <PluginId Condition="'$(PluginId)' == ''">$(MSBuildProjectName)</PluginId>
+    <!-- Whole, because whoever asks for it — the app's build — is in another folder. -->
+    <PluginPackagePath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(OutDir)', '$(PluginId).i4p'))</PluginPackagePath>
+    <PluginStaging>$(IntermediateOutputPath)plugin/</PluginStaging>
+  </PropertyGroup>
+
+  <Target Name="PackPlugin" AfterTargets="Build" DependsOnTargets="Build" Returns="$(PluginPackagePath)"
+          Inputs="$(TargetPath);plugin.json;prompt.md;@(PluginContent)" Outputs="$(PluginPackagePath)">
+    <ItemGroup>
+      <_PluginFile Include="$(TargetPath)" />
+      <_PluginFile Include="$(TargetDir)$(TargetName).pdb" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+      <_PluginFile Include="plugin.json" />
+      <_PluginFile Include="prompt.md" Condition="Exists('prompt.md')" />
+      <_PluginFile Include="@(PluginContent)" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(PluginStaging)" />
+    <Copy SourceFiles="@(_PluginFile)" DestinationFolder="$(PluginStaging)" />
+    <ZipDirectory SourceDirectory="$(PluginStaging)" DestinationFile="$(PluginPackagePath)" Overwrite="true" />
+    <Message Importance="normal" Text="$(PluginId) -> $(PluginPackagePath)" />
+  </Target>
+
+</Project>

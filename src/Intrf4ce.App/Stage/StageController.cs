@@ -436,6 +436,20 @@ public sealed class StageController : IStage
     public Task<string> PlaybackAsync(PlaybackRequest request, CancellationToken cancellationToken) =>
         Dispatcher.UIThread.InvokeAsync(() => Perform(request)).GetTask();
 
+    public Task<ElementReading?> ReadElementAsync(string? slideId, string elementId, CancellationToken cancellationToken) =>
+        Dispatcher.UIThread.InvokeAsync<ElementReading?>(() =>
+        {
+            var id = slideId ?? (_deck is not null && _current >= 0 && _current < _deck.Count ? _deck.Slides[_current].Id : null);
+            if (id is null || !_views.TryGetValue(id, out var slide) || slide.Find(elementId) is not { } view)
+            {
+                return null;
+            }
+
+            return view is PluginElementView plugin
+                ? new ElementReading(id, elementId, view.Element.TypeName, plugin.IsLive, plugin.Reading)
+                : new ElementReading(id, elementId, view.Element.TypeName, Live: false, view.Describe(null));
+        }).GetTask();
+
     public Task SayAsync(string text, CancellationToken cancellationToken)
     {
         Dispatcher.UIThread.Post(() => SayRequested?.Invoke(this, text));

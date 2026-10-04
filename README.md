@@ -42,6 +42,14 @@ running window, and starts the window if it is not open yet.
 | `quiz` | single or multiple choice; the answer goes back to the agent |
 | `map` | OpenStreetMap, with the places the narration visits marked and joined; focusing a place flies the map to it |
 
+And whatever plugins add. Three come built in, and keep their data current while the slide is up:
+
+| element | what it is |
+|---|---|
+| `timezones` | a 24-hour timeline across places, each hour shaded asleep, early, working or evening, with each place's clock, a line at now, and when its clocks change |
+| `weather` | the weather anywhere, from Open-Meteo: now, a strip of days, the 72-hour temperature and rain trend, the UV peak, sunrise and sunset |
+| `holidays` | the next public holidays in a country, from Nager.Date, with the regions each applies in and how soon; your region's in full colour |
+
 Narration carries cues that fire as the voice reaches them: `[[focus knee.acl]]` zooms to a callout
 and dims the rest, `[[zoom map 0.2 0.3 0.4 0.3]]` frames a region, `[[show chart]]` reveals a hidden
 element, `[[clear]]` returns to the whole slide.
@@ -67,6 +75,7 @@ one. The keys are vim's where vim has one.
 | `:` | the command line: Tab completes names and arguments, ↑ walks the history |
 | `?` | every command and the keys it is on |
 | `n` | a new session: an empty stage and a fresh conversation |
+| `dd` `u` | delete this session, everything in it; bring it back (until intrf4ce closes) |
 | `,` | settings |
 | `i` | the picture on this slide, filling the stage |
 | `+` `-` | zoom in, out |
@@ -76,8 +85,10 @@ one. The keys are vim's where vim has one.
 
 Some commands with no key of their own: `:set subtitles!` flips a setting, `:set volume 0.5` sets
 one, `:config` opens settings.yaml in your editor, `:group Rivers` files this session, `:rename …`,
-`:open <session>`, `:ask …`, `:attach <path>`, `:bind gt next` and `:unbind x` (both kept in
-settings.yaml), `:q` to quit. In any text box, Enter sends and Shift+Enter is a new line.
+`:open <session>`, `:delete <session>`, `:ask …`, `:attach <path>`, `:plugins`, `:plugin install
+<file>`, `:bind gt next` and `:unbind x` (both kept in settings.yaml), `:q` to quit. Plugins add
+their own: `:weather Zagreb`, `:time Melbourne and Zagreb`, `:holidays` ask the agent for a slide
+of each. In any text box, Enter sends and Shift+Enter is a new line.
 
 With the mouse: the wheel zooms, dragging pans, and clicking a callout, a node, a photo, a row or
 a place on a map focuses it (and again goes back). Right-clicking anything offers **Ask about
@@ -141,6 +152,9 @@ it plays the answer rather than the whole deck again. If the folder beside the e
 cannot be written (installed under Program Files, say), sessions fall back to `Documents/intrf4ce`,
 and decks made before this lived there are moved across on first run. Voice clips, renders and
 logs are cache (`%LOCALAPPDATA%\intrf4ce` on Windows) and can be deleted at any time.
+`dd` deletes the session that is open — its folder, and the hosted agent's transcript of it —
+and `u` brings it back; right-click one in the list to delete another. Deleted sessions wait in
+`sessions/.trash` only until intrf4ce closes, so `u` reaches back within a run and no further.
 `INTRF4CE_HOME=<folder>` puts config, cache and sessions under one folder, which is how the tests
 run a second instance beside a real one.
 
@@ -178,16 +192,42 @@ elevenlabs:
 The voice in use is in `get_state`, and in the status line when a voice declines: "ElevenLabs
 (0 of 30,000 characters used this month)" means the key was found.
 
+## Plugins
+
+A plugin is one file, `name.i4p`: what it draws on a slide, the code that keeps it current, the
+tools it gives the agent, the guide that tells the agent how to use all that, and ready-made
+requests that become commands. `:plugin install weather.i4p` copies one into `plugins/` beside
+settings.yaml and loads it at once; `:plugins` lists what is loaded, `:plugin disable <id>` and
+`:plugin remove <id>` take one away from the next start. The agent is told about a plugin the
+moment it loads — its element types join the slide schema, its tools the tool list, its guide the
+instructions — and `read_element` lets it read what a live element shows before saying it.
+
+The three built-in ones are plugins like any other, packed the same way and carried inside the
+executable. What each falls back on when the agent does not say goes in settings.yaml:
+
+```yaml
+plugins:
+  disabled: []
+  options:
+    timezones: { zones: [Australia/Melbourne, Europe/Zagreb] }
+    weather: { place: Melbourne }
+    holidays: { country: AU, region: VIC }
+```
+
+A plugin is .NET code with the app's permissions: install the ones you trust. Writing one is a
+class library against `Intrf4ce.Plugins` and two text files — see [docs/plugins.md](docs/plugins.md).
+
 ## Building
 
 .NET 10 SDK.
 
 ```bash
-dotnet test                              # 81 tests
+dotnet test                              # 190 tests
 dotnet run --project src/Intrf4ce.App
 ./scripts/package.ps1 -Runtime win-x64   # one self-contained exe in dist/
 ```
 
+`intrf4ce --pack-plugin <folder>` makes a plugin file from a plugin's build output.
 `intrf4ce --selftest render <folder>` renders one of every element type offscreen and writes PNGs,
 which is the quickest way to see whether the hidden renderer works on a machine, and
 `./scripts/smoke-linux.ps1` runs the Linux build in a container to catch a missing native library.
@@ -201,6 +241,8 @@ the hidden renderer and espeak-ng or Piper for a voice; macOS uses `say` and is 
 - `Intrf4ce.Media` — images and EXIF, voices, audio.
 - `Intrf4ce.Agent` — the MCP server, the tool catalog, and the hosted Claude Code process.
 - `Intrf4ce.App` — Avalonia: the stage, the camera, the element views, the HUD.
+- `Intrf4ce.Plugins` — what a plugin is built against, and the code that reads and loads one.
+- `plugins/` — the built-in plugins: timezones, weather, holidays.
 
 Avalonia in code, no XAML and no MVVM; the window is the composition root and builds everything by
 hand. More in [docs/architecture.md](docs/architecture.md) and the design in

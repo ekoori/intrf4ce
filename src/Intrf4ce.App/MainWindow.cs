@@ -10,6 +10,7 @@ using Intrf4ce.Agent.Tools;
 using Intrf4ce.App.Hud;
 using Intrf4ce.App.Input;
 using Intrf4ce.App.Media;
+using Intrf4ce.App.Plugins;
 using Intrf4ce.App.Render;
 using Intrf4ce.App.Stage;
 using Intrf4ce.App.Stage.Elements;
@@ -41,6 +42,10 @@ public sealed partial class MainWindow : Window
     private readonly HttpClient _http;
     private readonly HttpClient _api;
     private readonly WebRenderService _renderer;
+    private readonly PluginService _plugins;
+
+    /// <summary>The commands plugins' prompts made, so a plugin loaded later adds only its own.</summary>
+    private readonly HashSet<string> _promptCommands = new(StringComparer.OrdinalIgnoreCase);
     private readonly AssetFetcher _fetcher;
     private readonly AudioSystem _audio = new();
     private readonly VoiceService _voices;
@@ -75,6 +80,9 @@ public sealed partial class MainWindow : Window
 
     /// <summary>Files dropped for the agent, waiting to go with the next thing said.</summary>
     private readonly List<string> _attachments = [];
+
+    /// <summary>Sessions deleted this run, newest on top, for <c>u</c>.</summary>
+    private readonly Stack<DeletedSession> _deleted = new();
     private AskSubject? _asking;
     private string? _resumed;
     private string? _said;
@@ -128,7 +136,9 @@ public sealed partial class MainWindow : Window
 
         _stage = new StageView(_theme) { AnimationSpeed = settings.Stage.AnimationSpeed };
         _root = new Grid();
-        var context = new ElementContext(_theme, _renderer, images, new TileSource(_http, paths.Cache), PublishFromStage);
+        // Plugins share the narration's client: no image-only Accept header, and patience.
+        _plugins = new PluginService(paths, settings, _api, _theme);
+        var context = new ElementContext(_theme, _renderer, images, new TileSource(_http, paths.Cache), PublishFromStage, _plugins);
         _controller = new StageController(_stage, context, _decks, () => _stage)
         {
             FollowAgent = settings.Stage.FollowAgent,
@@ -138,6 +148,10 @@ public sealed partial class MainWindow : Window
         var media = new MediaTools(fetcher, Path.Combine(paths.Cache, "inspect"));
         var tools = new PresenterTools(_decks, _controller, _events, media, new SettingsAccess(settings, paths.SettingsFile));
         var catalog = ToolCatalog.Load();
+
+        // Before the hosted agent's prompt is put together, so it knows what they add.
+        _plugins.Connect(catalog, tools);
+        _plugins.LoadAll();
         _server = new McpServer(PipeName.ForCurrentUser(), catalog, tools, Log.Write);
 
         if (string.Equals(settings.Agent.Mode, "hosted", StringComparison.OrdinalIgnoreCase))
@@ -269,6 +283,8 @@ public sealed partial class MainWindow : Window
 
         _commands.Register(this);
         RegisterChoices();
+        RegisterPluginPrompts();
+        _plugins.Changed += (_, _) => RegisterPluginPrompts();
         LoadKeys(settings);
         _chat.Dismissed += (_, _) => _stage.Focus();
         _chat.ContextCleared += (_, _) => _asking = null;
@@ -301,6 +317,7 @@ public sealed partial class MainWindow : Window
         _sessions.NewRequested += (_, _) => NewSession();
         _sessions.SettingsRequested += (_, _) => ShowSettings(!_preferences.IsVisible);
         _sessions.Regrouped += (_, move) => Regroup(move.Id, move.Group);
+        _sessions.DeleteRequested += (_, id) => Execute($"delete {id}");
         _sessions.GroupRenamed += (_, rename) => Guard(() => _decks.RenameGroup(rename.From, rename.To));
         _decks.Changed += (_, e) => Dispatcher.UIThread.Post(
             () =>
@@ -401,6 +418,9 @@ public sealed partial class MainWindow : Window
 
         _agent?.Start(null);
 
+        // Whatever was deleted before a crash is deleted now: u only reaches back within a run.
+        _decks.Store.EmptyTrash();
+
         // Nothing on the stage yet: the presentations already made are the first thing to see.
         ListSessions();
         _sessions.Collapse(_decks.Current is not null);
@@ -408,6 +428,11 @@ public sealed partial class MainWindow : Window
         if (settingsError is not null)
         {
             _chat.AddMessage(fromUser: false, $"settings.yaml: {settingsError}", isError: true);
+        }
+
+        foreach (var problem in _plugins.Problems)
+        {
+            _chat.AddMessage(fromUser: false, $"A plugin did not load. {problem}", isError: true);
         }
 
         _stage.Focus();
@@ -468,7 +493,9 @@ public sealed partial class MainWindow : Window
     /// No deck is made here. A session is a subject, and the subject arrives with the first
     /// thing the user asks for; a row called "Untitled" that nobody ever filled in is litter.
     /// </remarks>
-    private void NewSession()
+    /// <param name="talk">Put the keyboard in the conversation, to say what the new session is about.</param>
+    /// <returns>The hosted agent letting go of the old conversation, for whoever must wait for it.</returns>
+    private Task NewSession(bool talk = true)
     {
         _decks.Flush();
         _narrator.Stop();
@@ -478,12 +505,111 @@ public sealed partial class MainWindow : Window
         _saidBeforeThereWasADeck.Clear();
         _chat.Clear();
         _chat.SetStatus(null);
-        _ = _agent?.ResetAsync(null);
+        var reset = _agent?.ResetAsync(null) ?? Task.CompletedTask;
         ListSessions();
         _chat.SetPlaceholder("What should I explain?");
-        _chat.FocusInput();
+        if (talk)
+        {
+            _chat.FocusInput();
+        }
+
         UpdateHud();
         Log.Write("new session");
+        return reset;
+    }
+
+    /// <summary>
+    /// Deletes a session completely: its folder — slides, pictures, narration, conversation —
+    /// and the hosted agent's transcript of it.
+    /// </summary>
+    /// <remarks>
+    /// Into the trash rather than gone, so that <c>u</c> can put it back as it would in vim; the
+    /// trash is emptied when the app closes. The transcript moves only once the agent has let
+    /// go of it, which for the open session means once it has stopped.
+    /// </remarks>
+    private string DeleteSession(string id)
+    {
+        var deck = _decks.Store.Load(id);
+        var wasOpen = _decks.Current?.Id == id;
+        var transcript = _agent?.TranscriptOf(deck.AgentSession) ?? [];
+        // The keyboard stays on the stage, where u is undo, rather than going to the conversation.
+        var stopped = wasOpen ? NewSession(talk: false) : Task.CompletedTask;
+        _stage.Focus();
+
+        var entry = _decks.Store.MoveToTrash(id);
+        var kept = stopped.ContinueWith(_ => Keep(transcript, Path.Combine(entry, "agent")), TaskScheduler.Default);
+        _deleted.Push(new DeletedSession(id, deck.Title, entry, wasOpen, kept));
+
+        ListSessions();
+        Log.Write($"deleted session {id} ({transcript.Count} transcript file(s))");
+        return $"deleted “{deck.Title}” — u brings it back";
+
+        static IReadOnlyList<(string Original, string Kept)> Keep(IReadOnlyList<string> paths, string folder)
+        {
+            var kept = new List<(string Original, string Kept)>();
+            foreach (var path in paths)
+            {
+                try
+                {
+                    kept.Add((path, DeckStore.MoveInto(path, folder)));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Log.Write($"could not move {path} out of the way: {ex.Message}");
+                }
+            }
+
+            return kept;
+        }
+    }
+
+    /// <summary>Puts back the session deleted last, transcript and all, and opens it if it was open.</summary>
+    private string UndoDelete()
+    {
+        if (!_deleted.TryPop(out var deleted))
+        {
+            throw new CommandException("nothing deleted to bring back");
+        }
+
+        var id = _decks.Store.RestoreFromTrash(deleted.Entry);
+
+        // Back before the agent is pointed at it again, or it would resume a conversation
+        // that is not there.
+        if (deleted.Transcript.Wait(TimeSpan.FromSeconds(10)))
+        {
+            foreach (var (original, kept) in deleted.Transcript.Result)
+            {
+                try
+                {
+                    DeckStore.Move(kept, original);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Log.Write($"could not put {original} back: {ex.Message}");
+                }
+            }
+        }
+
+        // The entry, once nothing is left in it; anything that would not go back stays until close.
+        try
+        {
+            if (!Directory.EnumerateFiles(deleted.Entry, "*", SearchOption.AllDirectories).Any())
+            {
+                Directory.Delete(deleted.Entry, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Write($"could not tidy {deleted.Entry}: {ex.Message}");
+        }
+
+        ListSessions();
+        if (deleted.WasOpen)
+        {
+            OpenDeck(id);
+        }
+
+        return $"“{deleted.Title}” is back";
     }
 
     /// <summary>Files a session under a group, or takes it out of one.</summary>
@@ -655,6 +781,7 @@ public sealed partial class MainWindow : Window
         _audio.Dispose();
         _api.Dispose();
         _decks.Dispose();
+        _decks.Store.EmptyTrash();
         _ = _agent?.DisposeAsync().AsTask();
         _ = _server.DisposeAsync().AsTask();
         _renderer.Dispose();
@@ -1252,3 +1379,12 @@ public sealed partial class MainWindow : Window
         Topmost = false;
     }
 }
+
+/// <summary>A session in the trash, and what is needed to put it back.</summary>
+/// <param name="Transcript">The agent's files moved out with it, once the agent has let go of them.</param>
+internal sealed record DeletedSession(
+    string Id,
+    string Title,
+    string Entry,
+    bool WasOpen,
+    Task<IReadOnlyList<(string Original, string Kept)>> Transcript);

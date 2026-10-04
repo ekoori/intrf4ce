@@ -73,7 +73,7 @@ public sealed class McpTests : IDisposable
         Assert.Contains("[[focus", init["result"]!["instructions"]!.GetValue<string>(), StringComparison.Ordinal);
 
         var list = await connection.RequestAsync("tools/list", []);
-        Assert.Equal(22, list["result"]!["tools"]!.AsArray().Count);
+        Assert.Equal(23, list["result"]!["tools"]!.AsArray().Count);
 
         var call = await connection.RequestAsync("tools/call", new JsonObject
         {
@@ -385,6 +385,11 @@ public sealed class McpTests : IDisposable
             Playback.Add(request);
             return Task.FromResult("speaking");
         }
+
+        public Dictionary<string, ElementReading> Readings { get; } = new(StringComparer.Ordinal);
+
+        public Task<ElementReading?> ReadElementAsync(string? slideId, string elementId, CancellationToken cancellationToken) =>
+            Task.FromResult(Readings.GetValueOrDefault($"{slideId ?? State.CurrentSlideId}.{elementId}"));
     }
 
     private sealed class FakeMedia : IMediaTools

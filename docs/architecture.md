@@ -22,6 +22,8 @@ That way an agent registers one command, and the user never runs a server.
 | `Intrf4ce.Media` | image decoding and EXIF, asset fetching, TTS engines (ElevenLabs, SAPI, `say`/espeak/Piper), audio playback and loudness envelopes. |
 | `Intrf4ce.Agent` | the MCP server and its tool catalog, the tool handlers, and the hosted Claude Code process. |
 | `Intrf4ce.App` | Avalonia: the stage and camera, element views, the hidden renderer, the HUD. |
+| `Intrf4ce.Plugins` | what a plugin is built against — `IPlugin`, `ElementType`, `LiveElement` — and the code that reads, checks and loads a plugin file. Avalonia and this are all a plugin shares with the app. |
+| `plugins/*` | the built-in plugins, each its own project, packed by `plugins/Directory.Build.targets` into an `.i4p` the app carries as a resource. |
 
 Avalonia is used in code only — no XAML, no MVVM, no DI container. `MainWindow` is the composition
 root: it builds every object by hand, so the whole graph reads in one file and a missing dependency
@@ -84,6 +86,10 @@ what it is looking at before the user asks for anything. A picture already on th
 referenced where it lives rather than copied, unless `library.copy_media` says the session has to
 travel.
 
+Deleting one (`dd`) moves its folder, and the hosted agent's transcript of it from Claude Code's
+own folder, into `sessions/.trash`; `u` moves them back, and the trash is emptied on the way out
+and, after a crash, on the way in. Vim's way: the key acts at once, and undo is the safety.
+
 ## Decks
 
 A deck is a folder: `deck.json` plus the assets an agent downloaded. `DeckService` holds one
@@ -94,6 +100,37 @@ calls arrive on others.
 Slides and elements are records with a `type` discriminator; JSON is strict (an unknown field is
 an error, not a shrug) and validation is path-precise, so an agent's mistake comes back as
 `elements[1].callouts[0].at: expected [x, y] as fractions within 0..1` rather than a stack trace.
+
+The discriminator is read by `ElementJsonConverter` rather than System.Text.Json's own
+polymorphism, which refuses a type it was not told about at compile time. intrf4ce's own types
+become their records; any other becomes a `PluginElement` holding its fields exactly as written,
+so a deck made with a plugin opens without it — showing a card that names what is missing — and
+is whole again when the plugin is back. Whether a type exists is the validator's question, asked
+of what the agent sends, against `ElementTypes`: the plugins loaded now.
+
+## Plugins
+
+A plugin file is a zip of `plugin.json`, `prompt.md` and assemblies. It is read whole and checked
+— its id, the contract version it was built for, that its entry assembly is there — before any of
+its code runs. Its assemblies go into a load context of their own, which hands back the app's
+copy of anything the app has, so a plugin's Avalonia controls are the stage's and its `IPlugin`
+is the app's. Its one `IPlugin` class registers element types and tools; a name intrf4ce or
+another plugin has is refused, and tool names must start with the plugin's id.
+
+What a plugin adds goes three ways. The element types go to `ElementTypes` in Core, where the
+validator checks fields against the plugin's schema and runs its check. The types, tools and
+`prompt.md` go to the `ToolCatalog`, which extends the `element` definition before resolving refs
+— each plugin field described with its type first, as the built-in fields are — and appends the
+guides to the instructions; sessions hold the catalogue and are sent `tools/list_changed` when it
+changes. And `PluginElementView` hosts the plugin's `LiveElement` on a slide: made once, told
+each new version of its fields, asked for its parts when a cue focuses one, and disposed when
+the view leaves the stage, which is how a plugin's clock stops.
+
+Packages come from `plugins.load` paths, then the `plugins` folder, then the executable, first
+wins per id. The built-in ones are packed at build time and embedded, then loaded through the
+same path as any installed plugin, which keeps that path honest. Nothing is ever unloaded: .NET
+cannot unload an assembly while objects made from it live, and a slide's controls are such
+objects, so turning a plugin off takes effect on the next start.
 
 ## Narration
 
