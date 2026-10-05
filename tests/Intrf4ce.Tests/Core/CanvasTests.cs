@@ -70,6 +70,50 @@ public class CanvasTests
     }
 
     [Fact]
+    public void OnATitledSlideFreeRectsAreFractionsOfWhatIsUnderTheTitle()
+    {
+        // The dashboard that put its table on its own title: y 0.02 of the whole slide.
+        var slide = new Slide
+        {
+            Id = "dash",
+            Title = "Today at a glance",
+            Layout = "free",
+            Size = [2400, 1350],
+            Elements = [new MarkdownElement { Id = "focus", Text = "x", Rect = [0.02, 0.02, 0.5, 0.5] }],
+        };
+
+        var box = SlideLayout.Arrange(slide)["focus"];
+        var top = SlideLayout.PaddingTop + SlideLayout.TitleBand;
+
+        Assert.True(box.Y > top);
+        Assert.Equal(top + (0.02 * (1350 - top)), box.Y, 3);
+        Assert.Equal(0.5 * (1350 - top), box.Height, 3);
+    }
+
+    [Fact]
+    public void ElementsThatCoverOneAnotherAreWarnedAboutAndHiddenOnesAreNot()
+    {
+        var slide = new Slide
+        {
+            Id = "dash",
+            Layout = "free",
+            Elements =
+            [
+                new MarkdownElement { Id = "a", Text = "a", Rect = [0.0, 0.0, 0.5, 0.5] },
+                new MarkdownElement { Id = "b", Text = "b", Rect = [0.4, 0.4, 0.5, 0.5] },
+                new MarkdownElement { Id = "c", Text = "c", Rect = [0.52, 0.0, 0.48, 0.38] },
+                new MarkdownElement { Id = "d", Text = "d", Rect = [0.0, 0.0, 1, 1], Hidden = true },
+            ],
+        };
+
+        var overlap = Assert.Single(SpecValidator.Validate(slide), i => i.Message.Contains("covers", StringComparison.Ordinal));
+
+        Assert.Equal("elements[1].rect", overlap.Path);
+        Assert.Equal(IssueSeverity.Warning, overlap.Severity);
+        Assert.Contains("'a'", overlap.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ASizeThatIsNotOneIsRefusedAndOneTooBigIsDrawnAtTheLimit()
     {
         var bad = SpecValidator.Validate(new Slide { Id = "s", Size = [4800] });

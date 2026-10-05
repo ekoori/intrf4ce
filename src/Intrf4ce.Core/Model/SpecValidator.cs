@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Intrf4ce.Core.Layout;
 using Intrf4ce.Core.Narration;
+using Intrf4ce.Core.Shapes;
 
 namespace Intrf4ce.Core.Model;
 
@@ -139,6 +140,11 @@ public static partial class SpecValidator
             ValidateElement(element, path, issues);
         }
 
+        if (resolved == "free")
+        {
+            ValidateOverlaps(slide, issues);
+        }
+
         ValidateSize(slide, issues);
         ValidateNarration(slide, issues);
         return issues;
@@ -205,6 +211,7 @@ public static partial class SpecValidator
                 : null,
             TableElement table => ElementParts.TableRows(table).ToList(),
             MapElement map => ElementParts.Places(map.Places ?? []).ToList(),
+            ModelElement model => MeshBuilder.Ids(model),
             MarkdownElement => null,
             DiagramElement => null,
             // Its parts are the plugin's to say, once the element is on the stage.
@@ -269,6 +276,36 @@ public static partial class SpecValidator
             else
             {
                 Error(issues, where, issue.Message);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Elements placed by hand that cover one another. A warning, not an error: the slide is
+    /// shown, and the agent is told which two to move apart. Hidden elements are left out —
+    /// one revealed over another may be the point.
+    /// </summary>
+    private static void ValidateOverlaps(Slide slide, List<SpecIssue> issues)
+    {
+        var placed = slide.Elements
+            .Select((element, index) => (Element: element, Index: index))
+            .Where(p => !p.Element.Hidden && p.Element.Rect is [_, _, > 0, > 0])
+            .ToList();
+
+        for (var i = 0; i < placed.Count; i++)
+        {
+            for (var j = i + 1; j < placed.Count; j++)
+            {
+                var (a, b) = (placed[i].Element.Rect!, placed[j].Element.Rect!);
+                var across = Math.Min(a[0] + a[2], b[0] + b[2]) - Math.Max(a[0], b[0]);
+                var down = Math.Min(a[1] + a[3], b[1] + b[3]) - Math.Max(a[1], b[1]);
+                var smaller = Math.Min(a[2] * a[3], b[2] * b[3]);
+
+                if (across > 0 && down > 0 && across * down > smaller * 0.02)
+                {
+                    Warn(issues, $"elements[{placed[j].Index}].rect",
+                        $"covers part of '{placed[i].Element.Id}'; give each element its own space, with a gap between them");
+                }
             }
         }
     }
@@ -378,6 +415,10 @@ public static partial class SpecValidator
 
             case MapElement map:
                 ValidateMap(map, path, issues);
+                break;
+
+            case ModelElement model:
+                ValidateModel(model, path, issues);
                 break;
         }
     }
@@ -595,6 +636,165 @@ public static partial class SpecValidator
             }
         }
     }
+
+    private static readonly string[] ModelStyles = ["wire", "solid", "both"];
+
+    /// <summary>A 3D model: shapes that can be made, numbers where numbers go, colours that have names.</summary>
+    private static void ValidateModel(ModelElement model, string path, List<SpecIssue> issues)
+    {
+        var parts = model.Parts ?? [];
+        if (model.Src is null && parts.Count == 0)
+        {
+            Error(issues, path, "a model3d needs parts — shapes to build it from — or src, an .obj or .stl file");
+        }
+
+        if (model.Src is { } src)
+        {
+            var file = AssetName(src);
+            if (!ModelFiles.Extensions.Contains(Path.GetExtension(file).ToLowerInvariant()))
+            {
+                Error(issues, path + ".src", $"src is an .obj or .stl file, by path or URL; '{file}' is neither");
+            }
+        }
+
+        if (model.Style is { } style && !ModelStyles.Contains(style))
+        {
+            Error(issues, path + ".style", $"style is {List(ModelStyles)}");
+        }
+
+        Triple(issues, path + ".rotation", model.Rotation, "rotation is [x, y, z] in degrees");
+
+        if (model.Spin is { } spin && (double.IsNaN(spin) || Math.Abs(spin) > 720))
+        {
+            Error(issues, path + ".spin", "spin is degrees a second, -720 to 720; 20 is a slow turn");
+        }
+
+        if (model.Explode is { } explode && (double.IsNaN(explode) || explode < 0 || explode > 1))
+        {
+            Error(issues, path + ".explode", "explode is 0 (together) to 1 (well apart)");
+        }
+
+        Colour(issues, path + ".color", model.Color);
+
+        if (parts.Count > 400)
+        {
+            Error(issues, path + ".parts", $"{parts.Count} parts is more than a model on a slide can carry; 400 at most");
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < parts.Count; i++)
+        {
+            var part = parts[i];
+            var where = $"{path}.parts[{i}]";
+
+            if (part.Id is { } id)
+            {
+                if (!IsValidId(id))
+                {
+                    Error(issues, where + ".id", $"'{id}' is not a valid id: use 1-64 letters, digits, '_' or '-'");
+                }
+                else if (!ids.Add(id))
+                {
+                    Error(issues, where + ".id", $"'{id}' is used by another part");
+                }
+            }
+
+            Colour(issues, where + ".color", part.Color);
+
+            if (part.Group is not null)
+            {
+                if (model.Src is null)
+                {
+                    Warn(issues, where + ".group", "group names a group of the src file, and this model has none; the entry is left out");
+                }
+
+                continue;
+            }
+
+            if (part.Shape is not { } shape || !Primitives.Shapes.Contains(shape))
+            {
+                Error(issues, where + ".shape", $"shape is one of {List(Primitives.Shapes)}");
+                continue;
+            }
+
+            Triple(issues, where + ".at", part.At, "at is [x, y, z]: y up, z towards the viewer");
+            Triple(issues, where + ".rotation", part.Rotation, "rotation is [x, y, z] in degrees");
+
+            if (part.Size is { } size && (size.Length is < 1 or > 3 || size.Any(s => double.IsNaN(s) || s <= 0)))
+            {
+                Error(issues, where + ".size", "size is one number, [across, up], or [x, y, z], all above 0");
+            }
+
+            switch (shape)
+            {
+                case "line":
+                    if (part.Points is not { Count: >= 2 } points)
+                    {
+                        Error(issues, where + ".points", "a line needs points: two or more [x, y, z]");
+                    }
+                    else
+                    {
+                        for (var p = 0; p < points.Count; p++)
+                        {
+                            Triple(issues, $"{where}.points[{p}]", points[p], "each point is [x, y, z]");
+                        }
+                    }
+
+                    break;
+
+                case "mesh":
+                    var vertices = part.Vertices ?? [];
+                    if (vertices.Count < 3 || vertices.Any(v => v is not [_, _, _]))
+                    {
+                        Error(issues, where + ".vertices", "a mesh needs vertices: three or more [x, y, z]");
+                        break;
+                    }
+
+                    if (vertices.Count > 20_000)
+                    {
+                        Error(issues, where + ".vertices", "a mesh this big belongs in a file: put it in an .obj and give src");
+                    }
+
+                    var faces = part.Faces ?? [];
+                    if (faces.Count == 0)
+                    {
+                        Error(issues, where + ".faces", "a mesh needs faces: each a list of three or more vertex indexes");
+                    }
+
+                    for (var f = 0; f < faces.Count; f++)
+                    {
+                        if (faces[f] is not { Length: >= 3 } face || face.Any(index => index < 0 || index >= vertices.Count))
+                        {
+                            Error(issues, $"{where}.faces[{f}]", $"a face is three or more indexes into vertices, 0 to {vertices.Count - 1}");
+                        }
+                    }
+
+                    break;
+            }
+        }
+    }
+
+    private static void Triple(List<SpecIssue> issues, string path, double[]? value, string expected)
+    {
+        if (value is not null && (value.Length != 3 || value.Any(v => double.IsNaN(v) || double.IsInfinity(v))))
+        {
+            Error(issues, path, expected);
+        }
+    }
+
+    private static void Colour(List<SpecIssue> issues, string path, string? colour)
+    {
+        if (colour is not null && !ModelColors.IsKnown(colour))
+        {
+            Error(issues, path, $"'{colour}' is not a colour here; use one of {List(ModelColors.Names)}");
+        }
+    }
+
+    /// <summary>The file name in a path or URL, for its extension.</summary>
+    private static string AssetName(string source) =>
+        Uri.TryCreate(source, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? Path.GetFileName(uri.AbsolutePath)
+            : Path.GetFileName(source);
 
     private static bool IsPlace(double[] at) =>
         at is [var latitude, var longitude] && Math.Abs(latitude) <= 90 && Math.Abs(longitude) <= 180

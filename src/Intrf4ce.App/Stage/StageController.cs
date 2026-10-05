@@ -39,6 +39,7 @@ public sealed class StageController : IStage
         _decks = decks;
         _snapshotRoot = snapshotRoot;
         _decks.Changed += (_, e) => Dispatcher.UIThread.Post(() => OnDeckChanged(e), DispatcherPriority.Normal);
+        _stage.DraggableAt = screen => _overview ? null : HitTest(_stage.ScreenToWorld(screen))?.Element as IStageDraggable;
     }
 
     /// <summary>The slide being shown changed, or the deck did.</summary>
@@ -210,6 +211,39 @@ public sealed class StageController : IStage
 
         Focus(targets[next], null);
         return true;
+    }
+
+    /// <summary>
+    /// Moves the cursor inside an element (J and K): the element in focus when it has a cursor,
+    /// otherwise the first on the slide that does — a clock, a forecast, a model.
+    /// </summary>
+    /// <returns>Whether anything had a cursor to move.</returns>
+    public bool MoveCursor(int steps)
+    {
+        if (CurrentView is not { } slide || _overview)
+        {
+            return false;
+        }
+
+        var focused = _focus?.Split('.')[0] is { } id ? slide.Find(id) : null;
+        if (focused?.MoveCursor(steps) == true)
+        {
+            return true;
+        }
+
+        return slide.Elements.Where(e => e != focused).Any(e => e.MoveCursor(steps));
+    }
+
+    /// <summary>Puts every cursor on the slide back (r): to now, to each model's own view.</summary>
+    public void ResetCursors()
+    {
+        if (CurrentView is { } slide)
+        {
+            foreach (var element in slide.Elements)
+            {
+                element.ResetCursor();
+            }
+        }
     }
 
     /// <summary>

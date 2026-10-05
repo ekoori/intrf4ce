@@ -28,6 +28,7 @@ internal sealed class TimezonesElement : LiveElement
     private IReadOnlyList<Place> _places = [];
     private IReadOnlyList<ZoneReading> _readings = [];
     private DateTimeOffset? _at;
+    private int _offset;
     private string? _highlighted;
 
     public TimezonesElement(ElementHost host)
@@ -82,7 +83,24 @@ internal sealed class TimezonesElement : LiveElement
     }
 
     public override string Describe() =>
-        Zones.Describe(_readings, _host.Clock.GetUtcNow(), _at);
+        Zones.Describe(_readings, _host.Clock.GetUtcNow(), Cursor(_host.Clock.GetUtcNow()));
+
+    /// <summary>
+    /// An hour at a time, from the agent's marked moment or from now: the clocks follow it and the
+    /// timeline turns over into the next day when it gets there. Two weeks either way at most.
+    /// </summary>
+    public override bool MoveCursor(int steps)
+    {
+        _offset = Math.Clamp(_offset + steps, -24 * 14, 24 * 14);
+        Redraw();
+        return true;
+    }
+
+    public override void ResetCursor()
+    {
+        _offset = 0;
+        Redraw();
+    }
 
     public override Rect? PartBounds(string part)
     {
@@ -109,8 +127,39 @@ internal sealed class TimezonesElement : LiveElement
         var now = _host.Clock.GetUtcNow();
         _readings = [.. _places.Select(p => ZoneAlmanac.Read(p.Label, p.Zone, now))];
         var highlighted = _highlighted is null ? -1 : Index(_highlighted);
-        _timeline.Show(_readings, now, _at, highlighted);
-        _note.Text = Note(now, highlighted);
+        _timeline.Show(_readings, now, Cursor(now), _offset != 0, highlighted);
+        _note.Text = _offset != 0 && Cursor(now) is { } cursor ? AtCursor(cursor, now) : Note(now, highlighted);
+        _note.Foreground = _host.Theme.Brush(_offset != 0 ? _host.Theme.Cool : _host.Theme.Muted);
+    }
+
+    /// <summary>The dashed line: the user's cursor while they move it, otherwise the agent's moment.</summary>
+    private DateTimeOffset? Cursor(DateTimeOffset now) =>
+        _offset == 0 ? _at : (_at ?? Hour(now)).AddHours(_offset);
+
+    /// <summary>Now, to the hour, so the cursor steps from 15:00 to 16:00 rather than from 15:37.</summary>
+    private static DateTimeOffset Hour(DateTimeOffset now) =>
+        now.AddMinutes(-now.Minute).AddSeconds(-now.Second).AddMilliseconds(-now.Millisecond);
+
+    /// <summary>What the line under the timeline says while the cursor moves: every place's time then.</summary>
+    private string AtCursor(DateTimeOffset cursor, DateTimeOffset now)
+    {
+        if (_readings.Count == 0 || !_readings[0].IsValid)
+        {
+            return "";
+        }
+
+        var home = _readings[0];
+        var then = home.At(cursor);
+        var hours = (int)Math.Round((cursor - now).TotalHours);
+        var others = _readings.Skip(1).Where(r => r.IsValid).Select(r =>
+        {
+            var there = r.At(cursor);
+            var day = there.Date != then.Date ? " " + there.ToString("ddd", CultureInfo.InvariantCulture) : "";
+            return $"{r.Label} {there.ToString("HH:mm", CultureInfo.InvariantCulture)}{day}";
+        });
+
+        var from = hours >= 0 ? $"+{hours}h" : $"{hours}h";
+        return $"{home.Label} {then.ToString("ddd d MMM HH:mm", CultureInfo.InvariantCulture)} ({from} from now):   {string.Join("  ·  ", others)}   —   r for now";
     }
 
     /// <summary>

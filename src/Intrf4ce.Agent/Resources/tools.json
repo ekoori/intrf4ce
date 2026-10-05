@@ -7,11 +7,11 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["title", "markdown", "image", "diagram", "math", "chart", "table", "gallery", "quiz", "map"]
+          "enum": ["title", "markdown", "image", "diagram", "math", "chart", "table", "gallery", "quiz", "map", "model3d"]
         },
         "id": { "type": "string", "description": "Unique on the slide; cues and focus use it (e.g. 'knee'). Letters, digits, '_' and '-'. Generated if omitted." },
         "area": { "type": "string", "description": "Which region: 'left'/'right' in split, 'main'/'side' in wide. Optional; order decides otherwise." },
-        "rect": { "type": "array", "items": { "type": "number" }, "description": "free layout only: [x, y, w, h] as fractions of the slide." },
+        "rect": { "type": "array", "items": { "type": "number" }, "description": "free layout only: [x, y, w, h] as fractions of the area under the slide's title (the whole slide when it has none). Rects must not overlap; leave gaps." },
         "caption": { "type": "string", "description": "A short line under the element." },
         "hidden": { "type": "boolean", "description": "Start invisible; reveal with a [[show id]] cue in the narration." },
 
@@ -19,7 +19,7 @@
         "subtitle": { "type": "string", "description": "title: a line under the title." },
         "kicker": { "type": "string", "description": "title: a small line above it ('Lesson 1')." },
 
-        "src": { "type": "string", "description": "image: a local file path or an http(s) URL (downloaded and kept with the deck)." },
+        "src": { "type": "string", "description": "image: a local file path or an http(s) URL (downloaded and kept with the deck). model3d: an .obj or .stl file, path or URL; each group of an .obj becomes a part." },
         "fit": { "type": "string", "enum": ["contain", "cover"], "description": "image: contain (default) shows all of it." },
         "alt": { "type": "string", "description": "image: what it shows." },
         "callouts": {
@@ -89,6 +89,35 @@
         "center": { "type": "array", "items": { "type": "number" }, "description": "map: [latitude, longitude] of the middle; omit to frame the places." },
         "zoom": { "type": "number", "description": "map: 0 the world, 4 a country, 10 a city, 15 a street, 19 a doorway. Omit to fit the places." },
         "route": { "type": "boolean", "description": "map: draw a line from each place to the next, and number them: a journey, a route, a campaign." },
+
+        "parts": {
+          "type": "array",
+          "description": "model3d: the shapes it is built from, in its own units (they are scaled to fit): y up, z towards the viewer. With src, entries with group give a group of the file its label, colour or id.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "description": "Focus it with [[focus modelId.partId]], which turns the model to face it. Made from the label if omitted." },
+              "label": { "type": "string", "description": "A few words, shown beside the model with a leader to the part." },
+              "detail": { "type": "string", "description": "A sentence shown when the part is focused." },
+              "shape": { "type": "string", "enum": ["box", "sphere", "cylinder", "cone", "capsule", "torus", "line", "mesh"] },
+              "at": { "type": "array", "items": { "type": "number" }, "description": "[x, y, z] of its middle." },
+              "size": { "type": "array", "items": { "type": "number" }, "description": "Its extent: [x, y, z], or [across, up], or one number. A torus lies flat: [width, thickness, depth]." },
+              "rotation": { "type": "array", "items": { "type": "number" }, "description": "[x, y, z] degrees." },
+              "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "line: [[x, y, z], ...] it runs through — a nerve, a vessel, a path." },
+              "vertices": { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "mesh: [[x, y, z], ...]." },
+              "faces": { "type": "array", "items": { "type": "array", "items": { "type": "integer" } }, "description": "mesh: faces, each three or more vertex indexes, counter-clockwise seen from outside." },
+              "color": { "type": "string", "description": "One of: accent, cool, white, grey, red, orange, yellow, green, teal, blue, purple, pink, bone, cartilage, muscle, tendon, ligament, nerve, artery, vein, organ, skin, fat, metal, wood, glass (see-through)." },
+              "fill": { "type": "boolean", "description": "Draw its faces filled (or not) whatever the model's style." },
+              "group": { "type": "string", "description": "With src: the file's group this entry is about." }
+            }
+          }
+        },
+        "style": { "type": "string", "enum": ["wire", "solid", "both"], "description": "model3d: wire (default) — wires only, see-through; solid — shaded faces; both — faces and wires." },
+        "rotation": { "type": "array", "items": { "type": "number" }, "description": "model3d: how it faces to start with, [x, y, z] degrees: turned round y, then tilted about x towards the viewer. Default a three-quarter view from a little above." },
+        "spin": { "type": "number", "description": "model3d: degrees a second it turns round its upright; 15-30 is a slow display turn. It stops when the user turns it, and while a part is in focus." },
+        "explode": { "type": "number", "description": "model3d: 0 to 1, how far its parts move apart from its middle to show how they fit; change it with update_slide and it moves." },
+        "labels": { "type": "boolean", "description": "model3d: label the parts that have labels (default true)." },
+        "color": { "type": "string", "description": "model3d: the colour of parts that do not name one; otherwise they take turns through the palette." },
 
         "question": { "type": "string", "description": "quiz: the question." },
         "options": { "type": "array", "items": { "type": "string" }, "description": "quiz: two or more choices." },

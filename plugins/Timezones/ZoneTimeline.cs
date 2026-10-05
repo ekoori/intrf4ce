@@ -28,7 +28,8 @@ internal sealed class ZoneTimeline : Control
     private readonly PluginTheme _theme;
     private IReadOnlyList<ZoneReading> _zones = [];
     private DateTimeOffset _now;
-    private DateTimeOffset? _at;
+    private DateTimeOffset? _cursor;
+    private bool _scrubbing;
     private int _highlighted = -1;
 
     public ZoneTimeline(PluginTheme theme)
@@ -45,11 +46,14 @@ internal sealed class ZoneTimeline : Control
 
     private double BandHeight => _zones.Count == 0 ? 0 : Math.Min((Bounds.Height - AxisHeight) / _zones.Count, Size * 4);
 
-    public void Show(IReadOnlyList<ZoneReading> zones, DateTimeOffset now, DateTimeOffset? at, int highlighted)
+    /// <param name="cursor">A moment to mark with a dashed line: the agent's, or the user's with J and K.</param>
+    /// <param name="scrubbing">The user is moving it: the clocks show its time, and the day drawn is its day.</param>
+    public void Show(IReadOnlyList<ZoneReading> zones, DateTimeOffset now, DateTimeOffset? cursor, bool scrubbing, int highlighted)
     {
         _zones = zones;
         _now = now;
-        _at = at;
+        _cursor = cursor;
+        _scrubbing = scrubbing && cursor is not null;
         _highlighted = highlighted;
         InvalidateMeasure();
         InvalidateVisual();
@@ -75,10 +79,11 @@ internal sealed class ZoneTimeline : Control
         var left = LabelWidth;
         var hourWidth = (Bounds.Width - left) / 24;
 
-        // The window is home's day, midnight to midnight. Every other band is the same twenty-four
-        // hours seen from somewhere else, which makes the offsets legible as a shift rather than
-        // as four unrelated clocks.
-        var origin = Midnight(_zones[0]);
+        // The window is home's day, midnight to midnight — the day of the cursor while the user moves
+        // it, so it can be taken into tomorrow. Every other band is the same twenty-four hours seen
+        // from somewhere else, which makes the offsets legible as a shift rather than as four
+        // unrelated clocks.
+        var origin = Midnight(_zones[0], _scrubbing ? _cursor!.Value : _now);
 
         DrawHourAxis(context, left, hourWidth, origin);
         for (var i = 0; i < _zones.Count; i++)
@@ -87,19 +92,20 @@ internal sealed class ZoneTimeline : Control
         }
 
         DrawMarker(context, left, hourWidth, origin, _now, _theme.Accent, dashed: false);
-        if (_at is { } at)
+        if (_cursor is { } cursor)
         {
-            DrawMarker(context, left, hourWidth, origin, at, _theme.Cool, dashed: true);
+            DrawMarker(context, left, hourWidth, origin, cursor, _theme.Cool, dashed: true);
         }
     }
 
     /// <summary>
-    /// Midnight today at home, as an instant — with the offset it had at midnight, not now: on
-    /// the day the clocks change they differ, and the whole timeline would start an hour out.
+    /// Midnight at home on the day of <paramref name="instant"/> — with the offset it had at
+    /// midnight, not then: on the day the clocks change they differ, and the whole timeline would
+    /// start an hour out.
     /// </summary>
-    private static DateTimeOffset Midnight(ZoneReading home)
+    private static DateTimeOffset Midnight(ZoneReading home, DateTimeOffset instant)
     {
-        var midnight = DateTime.SpecifyKind(home.Now.Date, DateTimeKind.Unspecified);
+        var midnight = DateTime.SpecifyKind(home.At(instant).Date, DateTimeKind.Unspecified);
         var zone = TimeZoneInfo.FindSystemTimeZoneById(home.ZoneId);
         return new DateTimeOffset(midnight, zone.GetUtcOffset(midnight));
     }
@@ -144,12 +150,15 @@ internal sealed class ZoneTimeline : Control
             return;
         }
 
-        var local = zone.At(_now);
-        var clock = Text(local.ToString("HH:mm", CultureInfo.InvariantCulture), Size * 1.05, _theme.Text, bold: true);
+        // While the user moves the cursor, the clocks are its time — "what time is the 3pm call
+        // there" belongs beside the name, not in a legend — and in its colour, so they read as then.
+        var shown = _scrubbing ? _cursor!.Value : _now;
+        var local = zone.At(shown);
+        var clock = Text(local.ToString("HH:mm", CultureInfo.InvariantCulture), Size * 1.05, _scrubbing ? _theme.Cool : _theme.Text, bold: true);
         var clockAt = new Point(Size * 0.3, top + (BandHeight * 0.12) + name.Height);
         context.DrawText(clock, clockAt);
 
-        if (local.Date != home.At(_now).Date)
+        if (local.Date != home.At(shown).Date)
         {
             var day = Text(local.ToString("ddd", CultureInfo.InvariantCulture), Size * 0.62, _theme.Accent);
             context.DrawText(day, new Point(clockAt.X + clock.Width + (Size * 0.25), clockAt.Y + (clock.Height - day.Height) * 0.7));

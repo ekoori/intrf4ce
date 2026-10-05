@@ -28,6 +28,7 @@ public sealed class ElementJsonConverter : JsonConverter<Element>
         ["gallery"] = typeof(GalleryElement),
         ["quiz"] = typeof(QuizElement),
         ["map"] = typeof(MapElement),
+        ["model3d"] = typeof(ModelElement),
     };
 
     /// <summary>Worked out from the type, not kept; decks written before this converter have them, and they are read past.</summary>

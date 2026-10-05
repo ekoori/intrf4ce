@@ -22,6 +22,7 @@ public static class ElementViews
         GalleryElement gallery => new GalleryView(context, gallery),
         QuizElement quiz => new QuizView(context, quiz),
         MapElement map => new MapView(context, map),
+        ModelElement model => new ModelView(context, model),
         PluginElement plugin => new PluginElementView(context, plugin),
         _ => new PlaceholderView(context, element),
     };

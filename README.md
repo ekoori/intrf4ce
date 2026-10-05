@@ -41,6 +41,7 @@ running window, and starts the window if it is not open yet.
 | `gallery` | a folder of photos or a list of items: a scattered pile, a grid, or a timeline by date taken |
 | `quiz` | single or multiple choice; the answer goes back to the agent |
 | `map` | OpenStreetMap, with the places the narration visits marked and joined; focusing a place flies the map to it |
+| `model3d` | an object in 3D — built from boxes, spheres, cylinders, capsules, cones, tori, lines and meshes, or loaded from an `.obj` or `.stl` — as wires, shaded faces or both, its parts labelled; focusing a part turns the model to face it, it can spin and pull its parts apart, and you turn it by dragging it or with J and K |
 
 And whatever plugins add. Three come built in, and keep their data current while the slide is up:
 
@@ -81,6 +82,7 @@ one. The keys are vim's where vim has one.
 | `+` `-` | zoom in, out |
 | `f` `F11` | fullscreen |
 | `z` | just the slides: hide the title, the progress and the buttons over the stage, or bring them back |
+| `J` `K` `r` | move the cursor inside the element in focus — an hour on or back in time zones or a forecast, a turn of a 3D model; `3J` is three; `r` puts it back |
 | `Esc` | back out of whatever is open; stops the agent mid-answer |
 
 Some commands with no key of their own: `:set subtitles!` flips a setting, `:set volume 0.5` sets
@@ -93,7 +95,7 @@ of each. In any text box, Enter sends and Shift+Enter is a new line.
 With the mouse: the wheel zooms, dragging pans, and clicking a callout, a node, a photo, a row or
 a place on a map focuses it (and again goes back). Right-clicking anything offers **Ask about
 this**, which frames the thing on the stage and sends your question to the agent along with what
-you pointed at. Double-clicking a picture gives it the whole stage; in there, dragging a box over
+you pointed at. Dragging a 3D model turns it rather than the stage. Double-clicking a picture gives it the whole stage; in there, dragging a box over
 any part of it and right-clicking asks about that area, and the agent is told where the box was in
 the picture's own coordinates. Double-clicking anywhere else puts the slide back as it was.
 
@@ -113,6 +115,12 @@ a picture, put it on a slide, label what is in it, or make a gallery of a folder
 **Sessions** can be filed into groups: drag one onto a group, onto another session to join its
 group, or onto "new group"; or right-click it; or `:group`. Ask the agent to organise them and it
 will.
+
+**Dashboards.** Ask for your day, a budget or the state of something and the agent makes one
+slide, with no title slide before it: live elements where the data keeps changing, each in a
+space of its own. On a slide laid out by hand, positions are fractions of the space under the
+slide's title, so nothing can be put on top of it, and the agent is warned of anything that
+overlaps.
 
 **Canvases.** Not every answer is a slide. For a subject that is one big picture — an
 architecture, a family tree, a mind map — the agent builds a canvas, a slide several times the
@@ -222,7 +230,7 @@ class library against `Intrf4ce.Plugins` and two text files — see [docs/plugin
 .NET 10 SDK.
 
 ```bash
-dotnet test                              # 190 tests
+dotnet test                              # 206 tests
 dotnet run --project src/Intrf4ce.App
 ./scripts/package.ps1 -Runtime win-x64   # one self-contained exe in dist/
 ```

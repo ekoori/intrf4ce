@@ -61,6 +61,26 @@ public sealed class ImageLoader(AssetFetcher fetcher, DeckService decks)
     }
 
     /// <summary>
+    /// A file that is not a picture — a 3D model — brought into the session as a picture would
+    /// be, downloaded or copied once and recorded against its source.
+    /// </summary>
+    /// <returns>Where the file is now.</returns>
+    public async Task<string> ResolveFileAsync(string source, string extension, CancellationToken cancellationToken)
+    {
+        var deck = decks.Current ?? throw new InvalidOperationException("no deck is open");
+        var folder = decks.Store.FolderOf(deck.Id);
+        deck.Assets.TryGetValue(source, out var recorded);
+
+        var (path, relative) = await fetcher.ResolveAsync(source, recorded, folder, cancellationToken, extension).ConfigureAwait(false);
+        if (relative is not null && relative != recorded)
+        {
+            decks.AddAsset(source, relative);
+        }
+
+        return path;
+    }
+
+    /// <summary>
     /// Sources under <paramref name="folder"/> this session has already copied, oldest name
     /// first: what a gallery can still show when the folder it was built from is not there,
     /// which is what happens when the session is opened on another machine.

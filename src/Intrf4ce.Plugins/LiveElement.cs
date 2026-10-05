@@ -48,6 +48,18 @@ public abstract class LiveElement : IDisposable
     {
     }
 
+    /// <summary>
+    /// Moves the element's own cursor by <paramref name="steps"/> and shows what is under it — an
+    /// hour along a timeline or a forecast, a day along a strip. The user's J and K, with a count
+    /// as in vim. False when it has no cursor, so the keys go to something that has.
+    /// </summary>
+    public virtual bool MoveCursor(int steps) => false;
+
+    /// <summary>Puts the cursor away: back to now, back to the element's own view. The user's r.</summary>
+    public virtual void ResetCursor()
+    {
+    }
+
     public void Dispose()
     {
         Dispose(disposing: true);

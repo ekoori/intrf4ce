@@ -6,13 +6,28 @@ using System.Text.Json.Nodes;
 
 namespace Intrf4ce.Agent.Mcp;
 
-/// <summary>The pipe every agent reaches intrf4ce through, one per user.</summary>
+/// <summary>The pipe every agent reaches intrf4ce through, one per user — and one per separate home.</summary>
 public static class PipeName
 {
+    /// <remarks>
+    /// A window started with its own <c>INTRF4CE_HOME</c> is a separate stage with separate
+    /// sessions, so it gets its own pipe: otherwise a test run beside the everyday window would
+    /// hand its agent to that window, or start a second listener on the same name for agents to
+    /// be shared between at random. The shim an agent starts inherits the variable, and finds
+    /// the same pipe.
+    /// </remarks>
     public static string ForCurrentUser()
     {
         var user = new string(Environment.UserName.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
-        return "intrf4ce." + user;
+        var name = "intrf4ce." + user;
+
+        if (Environment.GetEnvironmentVariable(Core.AppPaths.HomeVariable) is { Length: > 0 } home)
+        {
+            var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(home).ToUpperInvariant()));
+            name += "." + Convert.ToHexString(hash)[..10].ToLowerInvariant();
+        }
+
+        return name;
     }
 }
 

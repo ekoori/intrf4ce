@@ -21,6 +21,7 @@ internal sealed class TrendChart : Control
     private readonly PluginTheme _theme;
     private IReadOnlyList<HourPoint> _hours = [];
     private string _unit = "°";
+    private int _selected = -1;
 
     public TrendChart(PluginTheme theme)
     {
@@ -35,6 +36,20 @@ internal sealed class TrendChart : Control
     {
         _hours = hours;
         _unit = unit.StartsWith('°') ? "°" : unit;
+        _selected = Math.Min(_selected, hours.Count - 1);
+        InvalidateVisual();
+    }
+
+    /// <summary>How many hours it shows.</summary>
+    public int Count => _hours.Count;
+
+    /// <summary>The hour under the cursor, or null.</summary>
+    public HourPoint? Selected => _selected >= 0 && _selected < _hours.Count ? _hours[_selected] : null;
+
+    /// <summary>Puts the cursor on an hour, by index; -1 takes it away.</summary>
+    public void Select(int index)
+    {
+        _selected = _hours.Count == 0 ? -1 : Math.Clamp(index, -1, _hours.Count - 1);
         InvalidateVisual();
     }
 
@@ -62,6 +77,7 @@ internal sealed class TrendChart : Control
         DrawRain(context, plotHeight, step);
         DrawDays(context, plotHeight, step);
         DrawTemperature(context, plotHeight, step, low, span);
+        DrawSelection(context, plotHeight, step, low, span);
 
         var top = Label($"{Math.Round(high)}{_unit}", Size * 0.8, _theme.Text);
         var bottom = Label($"{Math.Round(low)}{_unit}", Size * 0.8, _theme.Muted);
@@ -148,6 +164,25 @@ internal sealed class TrendChart : Control
         }
 
         context.DrawGeometry(null, new Pen(_theme.Brush(_theme.Accent), Size * 0.11, lineJoin: PenLineJoin.Round, lineCap: PenLineCap.Round), line);
+    }
+
+    /// <summary>
+    /// The cursor: a line the height of the plot and a dot on the curve. Both, as in Kompas,
+    /// because either alone is ambiguous — the line says which hour, the dot which temperature.
+    /// </summary>
+    private void DrawSelection(DrawingContext context, double plotHeight, double step, double low, double span)
+    {
+        if (Selected is not { } hour)
+        {
+            return;
+        }
+
+        var x = _selected * step;
+        context.DrawLine(new Pen(_theme.Brush(_theme.Cool), Size * 0.07), new Point(x, 0), new Point(x, plotHeight));
+        if (hour.Temperature is { } value)
+        {
+            context.DrawEllipse(_theme.Brush(_theme.Cool), null, new Point(x, Y(value, plotHeight, low, span)), Size * 0.2, Size * 0.2);
+        }
     }
 
     /// <summary>Inset, so the warmest and coldest hours are not cut by the edges.</summary>

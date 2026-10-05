@@ -75,6 +75,17 @@ public abstract class ElementView : Panel
     {
     }
 
+    /// <summary>
+    /// Moves the element's own cursor (J and K): an hour on a clock or a forecast, a turn of a
+    /// model. False when it has none.
+    /// </summary>
+    public virtual bool MoveCursor(int steps) => false;
+
+    /// <summary>Puts the cursor back where it starts (r).</summary>
+    public virtual void ResetCursor()
+    {
+    }
+
     /// <summary>Where else a focused part shows itself (a callout's label), for the spotlight to light as well.</summary>
     public virtual Rect? LabelBounds(string part) => null;
 

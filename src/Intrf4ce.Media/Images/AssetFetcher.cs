@@ -64,9 +64,13 @@ public sealed class AssetFetcher(HttpClient http)
     /// folder it came from. The source is kept exactly as the agent wrote it and the copy is
     /// recorded against it, so the same file is never fetched or copied twice.
     /// </remarks>
+    /// <param name="fileExtension">
+    /// What the file is when it is not a picture — ".obj" for a 3D model — so a download is taken
+    /// as that whatever the server calls it, rather than refused for not being an image.
+    /// </param>
     /// <returns>The absolute path, and the path relative to the deck folder to record.</returns>
     public async Task<(string Path, string? Relative)> ResolveAsync(
-        string source, string? recorded, string deckFolder, CancellationToken cancellationToken)
+        string source, string? recorded, string deckFolder, CancellationToken cancellationToken, string? fileExtension = null)
     {
         ArgumentNullException.ThrowIfNull(source);
 
@@ -115,7 +119,7 @@ public sealed class AssetFetcher(HttpClient http)
             return (kept!, recorded);
         }
 
-        var (bytes, extension) = await DownloadAsync(source, cancellationToken).ConfigureAwait(false);
+        var (bytes, extension) = await DownloadAsync(source, cancellationToken, fileExtension).ConfigureAwait(false);
 
         var download = Beside(deckFolder, source, extension);
         Directory.CreateDirectory(Path.GetDirectoryName(download.Target)!);
@@ -133,12 +137,12 @@ public sealed class AssetFetcher(HttpClient http)
         return (Path.Combine(deckFolder, relative), relative.Replace('\\', '/'));
     }
 
-    public async Task<(byte[] Bytes, string Extension)> DownloadAsync(string url, CancellationToken cancellationToken)
+    public async Task<(byte[] Bytes, string Extension)> DownloadAsync(string url, CancellationToken cancellationToken, string? fileExtension = null)
     {
         await Downloads.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await GetAsync(url, cancellationToken).ConfigureAwait(false);
+            return await GetAsync(url, cancellationToken, fileExtension).ConfigureAwait(false);
         }
         finally
         {
@@ -154,12 +158,20 @@ public sealed class AssetFetcher(HttpClient http)
     /// <summary>How long to wait after a host asks for a slower pace; overridden in tests.</summary>
     public Func<int, TimeSpan> Backoff { get; init; } = attempt => TimeSpan.FromSeconds(1.5 * (attempt + 1));
 
-    private async Task<(byte[] Bytes, string Extension)> GetAsync(string url, CancellationToken cancellationToken)
+    private async Task<(byte[] Bytes, string Extension)> GetAsync(string url, CancellationToken cancellationToken, string? fileExtension)
     {
         HttpResponseMessage response;
         for (var attempt = 0; ; attempt++)
         {
-            response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            // A model is asked for as anything: the client's own Accept says images.
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            if (fileExtension is not null)
+            {
+                request.Headers.Accept.Clear();
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+            }
+
+            response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
             {
                 break;
@@ -199,7 +211,8 @@ public sealed class AssetFetcher(HttpClient http)
         }
 
         var bytes = buffer.ToArray();
-        var extension = ExtensionFor(type, bytes)
+        var extension = fileExtension
+            ?? ExtensionFor(type, bytes)
             ?? throw new InvalidDataException($"{url} is not an image (it is {(type.Length > 0 ? type : "unknown")}); link to the image file itself, not the page showing it");
 
         response.Dispose();

@@ -51,6 +51,21 @@ public static class SlideLayout
         return new Box(PaddingX, top, width - (2 * PaddingX), height - top - PaddingBottom);
     }
 
+    /// <summary>
+    /// What the free layout's fractions are fractions of: the slide below its title, so nothing
+    /// placed by hand can land on the title — the whole slide when there is none.
+    /// </summary>
+    /// <remarks>
+    /// They were fractions of the whole slide, and an agent laying out a dashboard put a table at
+    /// y 0.02, under the title, where it could not be read. The title's height is the layout's to
+    /// know, not the agent's.
+    /// </remarks>
+    public static Box FreeArea(bool hasTitle, double width, double height)
+    {
+        var top = hasTitle ? PaddingTop + TitleBand : 0;
+        return new Box(0, top, width, height - top);
+    }
+
     /// <summary>The areas an element may name under each layout.</summary>
     public static IReadOnlyList<string> AreasOf(string layout) => layout switch
     {
@@ -97,8 +112,9 @@ public static class SlideLayout
 
         var layout = Resolve(slide);
         var (width, height) = SizeOf(slide);
-        var content = ContentArea(!string.IsNullOrWhiteSpace(slide.Title), width, height);
-        var whole = new Box(0, 0, width, height);
+        var titled = !string.IsNullOrWhiteSpace(slide.Title);
+        var content = ContentArea(titled, width, height);
+        var free = FreeArea(titled, width, height);
         var elements = slide.Elements;
         var result = new Dictionary<string, Box>(StringComparer.Ordinal);
 
@@ -113,7 +129,7 @@ public static class SlideLayout
                 foreach (var element in elements)
                 {
                     result[element.Id] = element.Rect is [var x, var y, var w, var h]
-                        ? whole.Fraction(x, y, w, h)
+                        ? free.Fraction(x, y, w, h)
                         : content;
                 }
 

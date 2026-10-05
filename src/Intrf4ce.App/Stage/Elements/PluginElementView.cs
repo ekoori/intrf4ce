@@ -42,6 +42,10 @@ public sealed class PluginElementView : ElementView
 
     public override void Highlight(string? part) => _live?.Highlight(part);
 
+    public override bool MoveCursor(int steps) => _live?.MoveCursor(steps) == true;
+
+    public override void ResetCursor() => _live?.ResetCursor();
+
     protected override async Task LoadAsync(Element element, CancellationToken cancellationToken)
     {
         var plugin = (PluginElement)element;

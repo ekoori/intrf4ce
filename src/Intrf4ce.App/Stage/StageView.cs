@@ -35,6 +35,8 @@ public sealed class StageView : Panel
     private Point? _pressed;
     private CameraView _pressedView;
     private bool _dragging;
+    private IStageDraggable? _dragTarget;
+    private Vector _dragged;
     private TimeSpan? _lastPress;
     private Point _lastPressAt;
 
@@ -91,6 +93,9 @@ public sealed class StageView : Panel
     /// pointer is not a tap.
     /// </remarks>
     public event EventHandler<Point>? DoubleClicked;
+
+    /// <summary>What a drag starting at a point (in this view's coordinates) turns instead of panning the stage: a 3D model under it.</summary>
+    public Func<Point, IStageDraggable?>? DraggableAt { get; set; }
 
     /// <summary>The user moved the camera by hand (wheel or drag).</summary>
     public event EventHandler? MovedByHand;
@@ -218,6 +223,8 @@ public sealed class StageView : Panel
         _pressed = point;
         _pressedView = _view;
         _dragging = false;
+        _dragTarget = null;
+        _dragged = default;
         e.Pointer.Capture(this);
     }
 
@@ -234,6 +241,21 @@ public sealed class StageView : Panel
         var delta = e.GetPosition(this) - start;
         if (!_dragging && Math.Sqrt((delta.X * delta.X) + (delta.Y * delta.Y)) < 5)
         {
+            return;
+        }
+
+        // A drag that starts on something that turns, turns it; the stage stays where it is.
+        if (!_dragging)
+        {
+            _dragTarget = DraggableAt?.Invoke(start);
+        }
+
+        if (_dragTarget is { } target)
+        {
+            _dragging = true;
+            target.DragBy(delta - _dragged);
+            _dragged = delta;
+            Cursor = new Cursor(StandardCursorType.Hand);
             return;
         }
 
@@ -257,7 +279,12 @@ public sealed class StageView : Panel
         e.Pointer.Capture(null);
         Cursor = Cursor.Default;
 
-        if (_dragging)
+        if (_dragTarget is { } target)
+        {
+            _dragTarget = null;
+            target.DragEnded();
+        }
+        else if (_dragging)
         {
             MovedByHand?.Invoke(this, EventArgs.Empty);
         }

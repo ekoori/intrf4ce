@@ -31,6 +31,9 @@ public sealed partial class MainWindow
         ("l", "next"), ("<Right>", "next"), ("<PgDn>", "next"),
         ("j", "step-next"), ("<Down>", "step-next"),
         ("k", "step-prev"), ("<Up>", "step-prev"),
+        ("J", "cursor-next"),
+        ("K", "cursor-prev"),
+        ("r", "cursor-reset"),
         ("gg", "first"), ("<Home>", "first"),
         ("G", "last"), ("<End>", "last"),
         ("o", "overview"),
@@ -116,6 +119,21 @@ public sealed partial class MainWindow
 
     [Command("prev", Aliases = ["previous"], Description = "The previous slide", Group = "Moving around")]
     internal void CommandPrevious(int count = 1) => _controller.Show(_controller.CurrentIndex - Math.Max(1, count));
+
+    [Command("cursor-next", Description = "Move the cursor inside the element in focus: an hour on in time zones or a forecast, a turn of a 3D model; 3J is three", Group = "Moving around")]
+    internal string CommandCursorNext(int count = 1) => MoveCursor(Math.Max(1, count));
+
+    [Command("cursor-prev", Description = "Move the cursor inside the element in focus back: an hour earlier, a turn the other way", Group = "Moving around")]
+    internal string CommandCursorPrevious(int count = 1) => MoveCursor(-Math.Max(1, count));
+
+    [Command("cursor-reset", Aliases = ["now"], Description = "Put the cursors on this slide back: to now, to each model's own view", Group = "Moving around")]
+    internal void CommandCursorReset() => _controller.ResetCursors();
+
+    /// <summary>J and K: what moves says so itself, under the cursor; nothing moving is worth a word.</summary>
+    private string MoveCursor(int steps) =>
+        _controller.MoveCursor(steps)
+            ? ""
+            : "nothing on this slide has a cursor: J and K move the one in time zones, a forecast or a 3D model";
 
     [Command("first", Description = "The first slide", Group = "Moving around")]
     internal void CommandFirst() => _controller.First();

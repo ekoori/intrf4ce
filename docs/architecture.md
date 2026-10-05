@@ -108,6 +108,25 @@ so a deck made with a plugin opens without it — showing a card that names what
 is whole again when the plugin is back. Whether a type exists is the validator's question, asked
 of what the agent sends, against `ElementTypes`: the plugins loaded now.
 
+## 3D models
+
+A `model3d` is drawn by `ModelCanvas` without a 3D API. Each frame the corners are turned and
+projected on the CPU — a few thousand of them take well under a millisecond — the faces are sorted
+far to near and shaded by their angle to one light, and the result goes to Skia, on the GPU, in as
+few calls as possible: every face in one `DrawVertices` triangle mesh, the wires in a handful of
+`DrawPoints` batches by colour and depth. Because it is ordinary Avalonia drawing, the stage's
+camera, spotlight, fades and snapshots all work on it unchanged; a native OpenGL surface would
+have needed each of those rebuilt, and would not have scaled with the camera.
+
+The model itself is built in Core (`Shapes/`), testable without a window: primitives with their
+faces wound outwards and their natural wires (a sphere's latitudes and longitudes, not its
+triangles), `.obj` and `.stl` readers, a vertex-clustering thinner for scans over 40,000
+triangles, and, for meshes that came as triangles, wires only along creases and borders. Labels
+are laid out by the same `CalloutLayout` as an image's callouts, each kept to the side its part
+is on so a turning model's labels do not swap gutters. Every change of the way it faces — the
+agent's rotation, a focused part, J and K — is a turn, never a jump; a drag follows the pointer;
+and a spinning model three slides away asks for no frames.
+
 ## Plugins
 
 A plugin file is a zip of `plugin.json`, `prompt.md` and assemblies. It is read whole and checked

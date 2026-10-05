@@ -49,6 +49,11 @@ internal sealed class WeatherElement : LiveElement
     private string? _stale;
     private string? _highlighted;
 
+    // The cursor J and K move: an hour along the trend when it is shown, otherwise a day along
+    // the strip; -1 for none.
+    private int _hour = -1;
+    private int _day = -1;
+
     public WeatherElement(ElementHost host)
     {
         _host = host;
@@ -141,6 +146,46 @@ internal sealed class WeatherElement : LiveElement
         {
             column.Background = name == part ? _host.Theme.Brush(_host.Theme.Surface2) : Brushes.Transparent;
         }
+    }
+
+    /// <summary>
+    /// An hour at a time along the trend, as Kompas's j and k scrub its chart, or a day at a time
+    /// along the strip when the trend is not shown; what is under the cursor takes the footer's
+    /// line, so nothing below it moves.
+    /// </summary>
+    public override bool MoveCursor(int steps)
+    {
+        if (_reading is null)
+        {
+            return false;
+        }
+
+        if (_trend.IsVisible && _trend.Count > 0)
+        {
+            _hour = Math.Clamp((_hour < 0 ? -1 : _hour) + steps, 0, _trend.Count - 1);
+            _trend.Select(_hour);
+        }
+        else if (_days.IsVisible && _columns.Count > 0)
+        {
+            _day = Math.Clamp((_day < 0 ? -1 : _day) + steps, 0, _columns.Count - 1);
+            Highlight(_columns[_day].Part);
+        }
+        else
+        {
+            return false;
+        }
+
+        Footer();
+        return true;
+    }
+
+    public override void ResetCursor()
+    {
+        _hour = -1;
+        _day = -1;
+        _trend.Select(-1);
+        Highlight(null);
+        Footer();
     }
 
     protected override void Dispose(bool disposing)
@@ -257,6 +302,79 @@ internal sealed class WeatherElement : LiveElement
 
         DrawDays(reading);
         _trend.Show(reading.HoursFrom(_fetched, 72), unit);
+        if (_day >= 0 && _day < _columns.Count)
+        {
+            Highlight(_columns[_day].Part);
+        }
+
+        Footer();
+    }
+
+    /// <summary>
+    /// The line at the foot: the UV, the light and how fresh it is — or, while the cursor is out,
+    /// what is under it.
+    /// </summary>
+    private void Footer()
+    {
+        if (_reading is not { } reading)
+        {
+            return;
+        }
+
+        var theme = _host.Theme;
+        var unit = reading.TemperatureUnit.StartsWith('°') ? "°" : reading.TemperatureUnit;
+
+        if (_hour >= 0 && _trend.Selected is { } hour)
+        {
+            var parts = new List<string> { hour.Time.ToString("ddd HH:mm", CultureInfo.InvariantCulture) };
+            if (hour.Temperature is { } temperature)
+            {
+                parts.Add($"{Round(temperature)}{unit}");
+            }
+
+            if (hour.PrecipitationChancePercent is { } rain)
+            {
+                parts.Add($"{rain}% chance of rain");
+            }
+
+            if (hour.UvIndex is { } index && index > 0)
+            {
+                parts.Add($"UV {index.ToString("0.#", CultureInfo.InvariantCulture)} {UvBand(index)}");
+            }
+
+            _footer.Text = string.Join("   ·   ", parts) + "   —   r for now";
+            _footer.Foreground = theme.Brush(theme.Cool);
+            return;
+        }
+
+        if (_day >= 0 && _day < reading.Forecast.Count)
+        {
+            var day = reading.Forecast[_day];
+            var parts = new List<string>
+            {
+                $"{(_day == 0 ? "Today" : day.Date.ToString("dddd", CultureInfo.InvariantCulture))}: {day.Condition.Label.ToLowerInvariant()}",
+                $"{Round(day.High)}{unit} / {Round(day.Low)}{unit}",
+            };
+
+            if (day.PrecipitationChancePercent is { } rain)
+            {
+                parts.Add($"{rain}% chance of rain");
+            }
+
+            if (day.UvIndexMax is { } uvMax && uvMax > 0)
+            {
+                parts.Add($"UV {uvMax.ToString("0.#", CultureInfo.InvariantCulture)} {UvBand(uvMax)}");
+            }
+
+            if (day is { Sunrise: { } rises, Sunset: { } sets })
+            {
+                parts.Add($"sunrise {rises:HH:mm} · sunset {sets:HH:mm}");
+            }
+
+            _footer.Text = string.Join("   ·   ", parts) + "   —   r for now";
+            _footer.Foreground = theme.Brush(theme.Cool);
+            return;
+        }
 
         var footer = new List<string>();
         if (reading.PeakUv(_fetched, 24) is { } uv)

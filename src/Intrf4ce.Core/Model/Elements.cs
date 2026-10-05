@@ -226,6 +226,88 @@ public sealed record Place
 }
 
 /// <summary>
+/// An object in three dimensions, to turn and look at: built from simple shapes or loaded from an
+/// .obj or .stl file, drawn as wires, solid faces or both, its parts labelled.
+/// </summary>
+/// <remarks>
+/// For the shape of a thing — a bone, a joint, a molecule, a gearbox — where a flat picture hides
+/// what matters. Focusing a part turns the model to face it; the user turns it by dragging it, or
+/// with J and K; it can spin by itself, and pull its parts apart to show how they fit.
+/// </remarks>
+public sealed record ModelElement : Element
+{
+    /// <summary>An .obj or .stl file, a path or a URL; each of its groups becomes a part.</summary>
+    public string? Src { get; init; }
+
+    /// <summary>The shapes it is built from, or notes on a file's groups.</summary>
+    public IReadOnlyList<ModelPart>? Parts { get; init; }
+
+    /// <summary>wire (default), solid, or both.</summary>
+    public string? Style { get; init; }
+
+    /// <summary>How it is turned to start with: degrees about x, y and z.</summary>
+    public double[]? Rotation { get; init; }
+
+    /// <summary>Degrees a second it turns about its upright axis; 0 or none to stand still.</summary>
+    public double? Spin { get; init; }
+
+    /// <summary>0 to 1: how far its parts move apart from its middle, to see how they fit.</summary>
+    public double? Explode { get; init; }
+
+    /// <summary>Label the parts that have labels (default true).</summary>
+    public bool? Labels { get; init; }
+
+    /// <summary>The colour of every part that does not name its own.</summary>
+    public string? Color { get; init; }
+
+    public override string TypeName => "model3d";
+
+    public override bool IsVisual => true;
+}
+
+/// <summary>One shape of a 3D model, or a note on one group of its file.</summary>
+public sealed record ModelPart
+{
+    /// <summary>Focus it with <c>[[focus model.id]]</c>; made from the label when omitted.</summary>
+    public string? Id { get; init; }
+
+    public string? Label { get; init; }
+
+    /// <summary>A sentence shown when the part is focused.</summary>
+    public string? Detail { get; init; }
+
+    /// <summary>box, sphere, cylinder, cone, capsule, torus, line or mesh.</summary>
+    public string? Shape { get; init; }
+
+    /// <summary>Where its middle is: [x, y, z], y up, z towards the viewer.</summary>
+    public double[]? At { get; init; }
+
+    /// <summary>Its extent along x, y and z; one number for all three, two for [across, up].</summary>
+    public double[]? Size { get; init; }
+
+    /// <summary>Degrees about x, y and z.</summary>
+    public double[]? Rotation { get; init; }
+
+    /// <summary>line: the points it runs through, [[x, y, z], …].</summary>
+    public IReadOnlyList<double[]>? Points { get; init; }
+
+    /// <summary>mesh: its corners, [[x, y, z], …].</summary>
+    public IReadOnlyList<double[]>? Vertices { get; init; }
+
+    /// <summary>mesh: its faces, each a list of three or more corner indexes.</summary>
+    public IReadOnlyList<int[]>? Faces { get; init; }
+
+    /// <summary>A colour by name; see <see cref="Shapes.ModelColors"/>.</summary>
+    public string? Color { get; init; }
+
+    /// <summary>Its faces filled, or not, whatever the model's style says.</summary>
+    public bool? Fill { get; init; }
+
+    /// <summary>With <see cref="ModelElement.Src"/>: the group of the file this entry gives a label, colour or id to.</summary>
+    public string? Group { get; init; }
+}
+
+/// <summary>
 /// An element of a type a plugin adds. Its own fields travel exactly as the agent wrote them,
 /// whether or not the plugin is loaded, so a deck made with a plugin opens without it and is
 /// whole again when it is back.
