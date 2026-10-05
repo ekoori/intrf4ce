@@ -461,7 +461,9 @@ internal sealed class ModelCanvas : Control
 
             if (faces.Length > 0)
             {
-                using var paint = new SKPaint { IsAntialias = true };
+                // Skia multiplies each corner's colour by the paint's, and a new paint is black:
+                // white leaves the colours as they are.
+                using var paint = new SKPaint { Color = SKColors.White };
                 canvas.DrawVertices(SKVertexMode.Triangles, faces, null, colors, paint);
             }
 
