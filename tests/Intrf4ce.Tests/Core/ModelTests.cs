@@ -171,6 +171,27 @@ public class ModelTests
     }
 
     [Fact]
+    public void ASizeIsOneNumberWrittenBareOrInAList()
+    {
+        var mesh = Build("""
+            {"parts":[
+              {"shape":"sphere","size":0.9},
+              {"shape":"box","size":[2],"at":[3,0,0]},
+              {"shape":"box","size":[1,"2"],"at":[6,0,0]}]}
+            """);
+
+        // A sphere's corners touch its extent up and across, between its meridians in depth.
+        Assert.Equal((0.9f, 0.9f), (Extent(mesh, 0).X, Extent(mesh, 0).Y));
+        Assert.Equal(new Vector3(2), Extent(mesh, 1));
+        Assert.Equal(new Vector3(1, 2, 1), Extent(mesh, 2));
+
+        // Written back, it is a list whichever way it came.
+        var written = JsonSerializer.Serialize(new ModelPart { Shape = "sphere", Size = [0.9] }, DeckJson.Options);
+        Assert.Contains("\"size\":[0.9]", written, StringComparison.Ordinal);
+        Assert.ThrowsAny<JsonException>(() => JsonSerializer.Deserialize<ModelPart>("""{"size":"big"}""", DeckJson.Options));
+    }
+
+    [Fact]
     public void AModelsPartsAreFocusTargetsAndAFilesAreNotKnownYet()
     {
         var built = new ModelElement { Id = "m", Parts = [new ModelPart { Shape = "box", Label = "Femur" }] };
@@ -185,6 +206,14 @@ public class ModelTests
     {
         var model = JsonSerializer.Deserialize<Element>(json.Insert(1, "\"type\":\"model3d\",\"id\":\"m\","), DeckJson.Options) as ModelElement;
         return MeshBuilder.Build(MeshBuilder.Parts(model!, null));
+    }
+
+    /// <summary>How far one part reaches along x, y and z, to the nearest thousandth.</summary>
+    private static Vector3 Extent(Mesh mesh, int part)
+    {
+        var corners = mesh.Vertices.Skip(mesh.Parts[part].FirstVertex).Take(mesh.Parts[part].VertexCount).ToList();
+        var size = corners.Aggregate(Vector3.Max) - corners.Aggregate(Vector3.Min);
+        return new Vector3(MathF.Round(size.X, 3), MathF.Round(size.Y, 3), MathF.Round(size.Z, 3));
     }
 
     private static Vector3 Normal(List<Vector3> corners)

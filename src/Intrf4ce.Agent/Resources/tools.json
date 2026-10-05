@@ -101,7 +101,7 @@
               "detail": { "type": "string", "description": "A sentence shown when the part is focused." },
               "shape": { "type": "string", "enum": ["box", "sphere", "cylinder", "cone", "capsule", "torus", "line", "mesh"] },
               "at": { "type": "array", "items": { "type": "number" }, "description": "[x, y, z] of its middle." },
-              "size": { "type": "array", "items": { "type": "number" }, "description": "Its extent: [x, y, z], or [across, up], or one number. A torus lies flat: [width, thickness, depth]." },
+              "size": { "type": ["array", "number"], "items": { "type": "number" }, "description": "Its extent: [x, y, z], or [across, up], or one number for all three. A torus lies flat: [width, thickness, depth]." },
               "rotation": { "type": "array", "items": { "type": "number" }, "description": "[x, y, z] degrees." },
               "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "line: [[x, y, z], ...] it runs through — a nerve, a vessel, a path." },
               "vertices": { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "mesh: [[x, y, z], ...]." },

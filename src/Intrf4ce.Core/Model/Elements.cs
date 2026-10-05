@@ -283,6 +283,7 @@ public sealed record ModelPart
     public double[]? At { get; init; }
 
     /// <summary>Its extent along x, y and z; one number for all three, two for [across, up].</summary>
+    [JsonConverter(typeof(NumbersConverter))]
     public double[]? Size { get; init; }
 
     /// <summary>Degrees about x, y and z.</summary>
