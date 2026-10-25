@@ -257,7 +257,7 @@ class library against `Intrf4ce.Plugins` and two text files — see [docs/plugin
 .NET 10 SDK.
 
 ```bash
-dotnet test                              # 257 tests
+dotnet test                              # 259 tests
 dotnet run --project src/Intrf4ce.App
 ./scripts/package.ps1 -Runtime win-x64   # one self-contained exe in dist/
 ```
