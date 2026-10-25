@@ -2,7 +2,7 @@
 
 A presentation that builds itself while you watch.
 
-![Asked how a jet engine works, the agent answers in the conversation and builds the slides one after another: a title, a cutaway with labelled callouts the camera flies to as the narration names them, a diagram walked node by node, and a 3D engine turning to face its fan; then the whole deck at once](docs/media/intrf4ce.gif)
+![Asked how a jet engine works, the agent answers in the conversation and builds eight slides while the narration plays: a title, a cutaway with labelled callouts the camera flies to as they are named, a diagram walked node by node, a 3D engine turning to face its fan, a chart of bypass ratios, the thrust formula, and a map that flies from Ohio to Connecticut to Derby; then the quiz is answered, the agent replies, and the whole deck shows at once](docs/media/intrf4ce.gif)
 
 intrf4ce is a stage an agent drives over MCP. You ask for something to be explained — a concept,
 a machine, a folder of photos, a book — and slides appear one after another: images with labelled
