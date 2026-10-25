@@ -34,6 +34,13 @@ public enum AgentActivityKind
     Error,
 
     Exited,
+
+    /// <summary>
+    /// Claude Code is not signed in, so nothing said reaches the agent until it is.
+    /// <see cref="AgentActivity.Text"/> is how Claude Code put it; empty when a check found it
+    /// before anything was said.
+    /// </summary>
+    SignInNeeded,
 }
 
 public sealed record AgentActivity(AgentActivityKind Kind, string Text, double? Cost = null);
@@ -66,17 +73,46 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
     private readonly HostedAgentOptions _options;
     private readonly Action<string> _log;
     private readonly object _gate = new();
+
+    /// <summary>What was said since the last turn ended: what a turn that could not sign in leaves unanswered.</summary>
+    private readonly List<string> _sent = [];
+
+    /// <summary>What was said while signed out, to be asked again once signed in.</summary>
+    private readonly List<string> _unanswered = [];
     private Process? _process;
     private StreamWriter? _stdin;
     private int _restarts;
     private int _controls;
     private volatile bool _stopping;
 
+    /// <summary>The turn in flight failed for want of a sign-in: what Claude Code said about it.</summary>
+    private string? _signInFailure;
+
+    /// <summary>The turn in flight has had its failure reported already, as Claude Code put it.</summary>
+    private bool _failureReported;
+
     public ClaudeCodeHost(HostedAgentOptions options, Action<string> log)
     {
         _options = options;
         _log = log;
+        Account = new ClaudeSignIn(options.Settings, WorkingDirectory, log);
     }
+
+    /// <summary>Claude Code's own sign-in, run the way the agent is, so it signs in the login the agent uses.</summary>
+    public ClaudeSignIn Account { get; }
+
+    /// <summary>
+    /// Claude Code is not signed in, as far as the last turn or check could tell; a turn that
+    /// gets through, or <see cref="SignInAsync"/>, puts it right.
+    /// </summary>
+    public bool SignedOut { get; private set; }
+
+    /// <summary>
+    /// The agent signs in with an API key from the environment, which no sign-in in the browser
+    /// replaces: Claude Code prefers a key whenever it has one.
+    /// </summary>
+    private bool UsesApiKey =>
+        _options.Settings.UseApiKey && Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") is { Length: > 0 };
 
     public event EventHandler<AgentActivity>? Activity;
 
@@ -197,6 +233,7 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
         }
 
         await StopAsync().ConfigureAwait(false);
+        ForgetUnanswered();
         Start(session);
     }
 
@@ -265,8 +302,61 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
         _stopping = false;
         if (TryWrite(message))
         {
+            lock (_gate)
+            {
+                _sent.Add(text);
+            }
+
             SetStatus(AgentStatus.Working);
         }
+    }
+
+    /// <summary>
+    /// Asks Claude Code whether it is signed in, so that an agent nobody can reach is reported
+    /// before anyone has asked it anything.
+    /// </summary>
+    public async Task CheckSignInAsync()
+    {
+        if (await Account.StatusAsync().ConfigureAwait(false) is { SignedIn: false } && !SignedOut)
+        {
+            SignedOut = true;
+            Activity?.Invoke(this, new AgentActivity(AgentActivityKind.SignInNeeded, ""));
+        }
+    }
+
+    /// <summary>
+    /// Signs Claude Code in, in the browser, and carries on: a fresh agent, which reads the new
+    /// login, and whatever was said while signed out asked again.
+    /// </summary>
+    /// <param name="page">Told the sign-in page's address, for when no browser came up.</param>
+    public async Task<SignInOutcome> SignInAsync(Action<string> page, CancellationToken cancellation = default)
+    {
+        var outcome = await Account.SignInAsync(page, cancellation).ConfigureAwait(false);
+        if (!outcome.SignedIn)
+        {
+            return outcome;
+        }
+
+        SignedOut = false;
+        string[] unanswered;
+        lock (_gate)
+        {
+            unanswered = [.. _unanswered];
+            _unanswered.Clear();
+        }
+
+        // The process running now started with the old login, or with none.
+        var session = SessionId;
+        await StopAsync().ConfigureAwait(false);
+        if (unanswered.Length == 0)
+        {
+            Start(session);
+            return outcome;
+        }
+
+        _log($"signed in; asking again what {unanswered.Length} message(s) left unanswered");
+        Send(string.Join("\n\n", unanswered));
+        return outcome with { AskedAgain = true };
     }
 
     /// <summary>One line of JSON down the agent's stdin; false when it has stopped listening.</summary>
@@ -361,35 +451,34 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
     public async Task ResetAsync(string? resumeSession)
     {
         await StopAsync().ConfigureAwait(false);
+        ForgetUnanswered();
         SessionId = resumeSession;
         Cost = 0;
     }
 
+    /// <summary>
+    /// What a signed-out agent was asked belongs to the conversation it was asked in; asked again
+    /// in another, it would be an answer to nobody.
+    /// </summary>
+    private void ForgetUnanswered()
+    {
+        lock (_gate)
+        {
+            _sent.Clear();
+            _unanswered.Clear();
+        }
+    }
+
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 
-    private ProcessStartInfo BuildStart(string executable, string? resumeSession)
+    /// <summary>
+    /// Claude Code started for anything intrf4ce runs it for — the agent, its sign-in, the
+    /// question whether it is signed in: no window, UTF-8 both ways, and an API key left in the
+    /// environment hidden unless the settings ask for it. The caller adds the arguments.
+    /// </summary>
+    internal static ProcessStartInfo StartInfo(string executable, AgentSettings settings, string workingDirectory)
     {
-        var settings = _options.Settings;
-        var workingDirectory = WorkingDirectory;
         Directory.CreateDirectory(workingDirectory);
-
-        var mcpConfig = Path.Combine(_options.Home, "mcp.json");
-        var config = new JsonObject
-        {
-            ["mcpServers"] = new JsonObject
-            {
-                ["intrf4ce"] = new JsonObject
-                {
-                    ["command"] = _options.Executable,
-                    ["args"] = new JsonArray("--mcp", "--hosted"),
-                },
-            },
-        };
-        File.WriteAllText(mcpConfig, config.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-
-        var prompt = Path.Combine(_options.Home, "presenter.md");
-        File.WriteAllText(prompt, _options.SystemPrompt);
-
         var start = new ProcessStartInfo(executable)
         {
             WorkingDirectory = workingDirectory,
@@ -402,11 +491,6 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             StandardErrorEncoding = new UTF8Encoding(false),
             StandardInputEncoding = new UTF8Encoding(false),
         };
-
-        // Load intrf4ce's tools up front. Claude Code otherwise defers MCP tool schemas and the
-        // first thing every session does is a tool search, a round trip before any slide
-        // appears; with one small server there is nothing to save by deferring.
-        start.Environment["ENABLE_TOOL_SEARCH"] = "false";
 
         // An API key left in the environment for something else would bill the presentation to
         // API credit instead of the account the agent is signed in with, and fail outright when
@@ -425,6 +509,39 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             start.ArgumentList.Add("/c");
             start.ArgumentList.Add(executable);
         }
+
+        return start;
+    }
+
+    private ProcessStartInfo BuildStart(string executable, string? resumeSession)
+    {
+        var settings = _options.Settings;
+
+        // The first time, nothing is there yet: not even the folder these two files go in.
+        Directory.CreateDirectory(_options.Home);
+        var mcpConfig = Path.Combine(_options.Home, "mcp.json");
+        var config = new JsonObject
+        {
+            ["mcpServers"] = new JsonObject
+            {
+                ["intrf4ce"] = new JsonObject
+                {
+                    ["command"] = _options.Executable,
+                    ["args"] = new JsonArray("--mcp", "--hosted"),
+                },
+            },
+        };
+        File.WriteAllText(mcpConfig, config.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var prompt = Path.Combine(_options.Home, "presenter.md");
+        File.WriteAllText(prompt, _options.SystemPrompt);
+
+        var start = StartInfo(executable, settings, WorkingDirectory);
+
+        // Load intrf4ce's tools up front. Claude Code otherwise defers MCP tool schemas and the
+        // first thing every session does is a tool search, a round trip before any slide
+        // appears; with one small server there is nothing to save by deferring.
+        start.Environment["ENABLE_TOOL_SEARCH"] = "false";
 
         foreach (var argument in new[] { "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose" })
         {
@@ -507,7 +624,8 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
         }
     }
 
-    private void Handle(JsonObject message)
+    /// <summary>One message from the agent's stdout.</summary>
+    internal void Handle(JsonObject message)
     {
         var type = message["type"]?.GetValue<string>();
         var subtype = message["subtype"]?.GetValue<string>();
@@ -530,6 +648,14 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
                 // Only the top-level conversation; a subagent's chatter is not addressed to the user.
                 if (message["parent_tool_use_id"] is not null && message["parent_tool_use_id"]!.GetValueKind() != JsonValueKind.Null)
                 {
+                    break;
+                }
+
+                // Claude Code's own word that a request failed, dressed as a reply no model
+                // wrote: an error, not the agent talking, and not a line of the conversation.
+                if (message["is_api_error_message"]?.GetValueKind() is JsonValueKind.True)
+                {
+                    OnApiError(message, content);
                     break;
                 }
 
@@ -567,7 +693,36 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
                 var stopped = _stopping;
                 _stopping = false;
 
-                if (!stopped && (message["is_error"]?.GetValue<bool>() == true || subtype is not "success"))
+                string? signIn;
+                bool reported;
+                lock (_gate)
+                {
+                    (signIn, reported) = (_signInFailure, _failureReported);
+                    (_signInFailure, _failureReported) = (null, false);
+
+                    // A turn that got through means it is signed in, and whatever went
+                    // unanswered before has been overtaken by what was asked since.
+                    if (signIn is null)
+                    {
+                        _unanswered.Clear();
+                    }
+                    else
+                    {
+                        _unanswered.AddRange(_sent);
+                    }
+
+                    _sent.Clear();
+                }
+
+                SignedOut = signIn is not null;
+                if (signIn is not null)
+                {
+                    // A process that failed to sign in may hold on to that; the next message
+                    // starts a fresh one, which reads whatever login there is by then.
+                    _ = StopAsync();
+                    Activity?.Invoke(this, new AgentActivity(AgentActivityKind.SignInNeeded, signIn));
+                }
+                else if (!stopped && !reported && (message["is_error"]?.GetValue<bool>() == true || subtype is not "success"))
                 {
                     var error = message["result"]?.GetValue<string>() ?? subtype ?? "the turn failed";
                     Activity?.Invoke(this, new AgentActivity(AgentActivityKind.Error, error));
@@ -576,6 +731,32 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
                 Activity?.Invoke(this, new AgentActivity(AgentActivityKind.TurnDone, "", Cost));
                 break;
         }
+    }
+
+    /// <summary>
+    /// A request Claude Code could not make. Signed out, it waits for the end of the turn,
+    /// which is when what was asked can be put aside to ask again; anything else is said now.
+    /// </summary>
+    private void OnApiError(JsonObject message, JsonArray content)
+    {
+        var said = string.Join("\n", content.OfType<JsonObject>().Select(b => b["text"]?.GetValue<string>()).OfType<string>()).Trim();
+        var kind = message["error"] is JsonValue error && error.TryGetValue<string>(out var named) ? named : null;
+
+        if (kind == "authentication_failed" && !UsesApiKey)
+        {
+            _signInFailure = said;
+            return;
+        }
+
+        if (kind == "authentication_failed")
+        {
+            said += " The agent signs in with ANTHROPIC_API_KEY because agent.use_api_key is on: fix that key,"
+                + " or turn the setting off to use your Claude account instead.";
+        }
+
+        // The turn's result says the same again; once is enough.
+        _failureReported = true;
+        Activity?.Invoke(this, new AgentActivity(AgentActivityKind.Error, said.Length > 0 ? said : kind ?? "the request failed"));
     }
 
     /// <summary>

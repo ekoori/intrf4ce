@@ -87,10 +87,11 @@ one. The keys are vim's where vim has one.
 
 Some commands with no key of their own: `:set subtitles!` flips a setting, `:set volume 0.5` sets
 one, `:config` opens settings.yaml in your editor, `:group Rivers` files this session, `:rename …`,
-`:open <session>`, `:delete <session>`, `:ask …`, `:attach <path>`, `:plugins`, `:plugin install
-<file>`, `:bind gt next` and `:unbind x` (both kept in settings.yaml), `:q` to quit. Plugins add
-their own: `:weather Zagreb`, `:time Melbourne and Zagreb`, `:holidays` ask the agent for a slide
-of each. In any text box, Enter sends and Shift+Enter is a new line.
+`:open <session>`, `:delete <session>`, `:ask …`, `:attach <path>`, `:login` signs the agent in to
+your Claude account, `:plugins`, `:plugin install <file>`, `:bind gt next` and `:unbind x` (both
+kept in settings.yaml), `:q` to quit. Plugins add their own: `:weather Zagreb`, `:time Melbourne
+and Zagreb`, `:holidays` ask the agent for a slide of each. In any text box, Enter sends and
+Shift+Enter is a new line.
 
 With the mouse: the wheel zooms, dragging pans, and clicking a callout, a node, a photo, a row or
 a place on a map focuses it (and again goes back). Right-clicking anything offers **Ask about
@@ -176,6 +177,15 @@ credit (or fail, when that account has none and your subscription would have wor
 own business: `claude auth status` says, and `claude auth login --claudeai` signs it into a
 subscription.
 
+**Signing in.** The agent works through Claude Code's own sign-in, which runs out from time to
+time. When it has, intrf4ce says so when it starts — or in place of the answer, if it was asked
+something — with a **Sign in** button in the conversation: your browser opens Claude's sign-in
+page, and once you are through, the agent starts again on the new login and is asked again what
+it could not answer. `:login` does the same at any time, to sign in to another account. If no
+browser comes up, the card has a link to the page; it ends by showing a code, which goes in the
+conversation's box. The login itself is Claude Code's `claude auth login`: intrf4ce never sees
+your password or your tokens.
+
 **ElevenLabs.** With a key, narration is spoken by ElevenLabs — `eleven_v3` by default, the most
 natural and expressive of its models, which also takes directions such as `[curious]` or
 `[whispers]` that the agent may put in narration (they never appear in the subtitles, and other
@@ -230,7 +240,7 @@ class library against `Intrf4ce.Plugins` and two text files — see [docs/plugin
 .NET 10 SDK.
 
 ```bash
-dotnet test                              # 206 tests
+dotnet test                              # 230 tests
 dotnet run --project src/Intrf4ce.App
 ./scripts/package.ps1 -Runtime win-x64   # one self-contained exe in dist/
 ```

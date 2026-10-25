@@ -265,6 +265,7 @@ the agent.
 | TTS failure or budget cap | next engine, then subtitles only; one notice to user and agent |
 | no web engine | diagrams, math and charts show their source with a notice; everything else works |
 | hosted agent exits | orb turns red, chat says so, restart with `--resume` |
+| hosted agent signed out | a Sign in card in the chat runs `claude auth login`; then restart and ask again what failed |
 | GUI exits under an attached agent | shim exits non-zero; the agent reports the server as failed |
 
 Security: the pipe is current-user only; downloads are size-capped and type-checked; the render

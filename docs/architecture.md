@@ -209,3 +209,20 @@ has the tools to read a file — `inspect_image` for a picture, its own Read for
 and a path is what an image element or a gallery wants. The conversation keeps the paths with
 the line they went with, so a reopened presentation shows the pictures again, and the agent's
 summary of a session lists them.
+
+## Signing in
+
+The hosted agent signs in however Claude Code is signed in, and that login expires. Claude Code
+reports a request it could not make as an assistant message no model wrote, marked
+`is_api_error_message`, with `error` saying why; `ClaudeCodeHost` turns those into errors rather
+than lines the agent said, and `authentication_failed` into `SignInNeeded`. The turn's messages
+are kept to ask again, and the process is stopped, so the next message starts one that reads
+whatever login there is by then. `claude auth status --json` at start-up finds the same thing
+before anyone has asked anything.
+
+`ClaudeSignIn` runs `claude auth login` the way the agent is run — same command, environment and
+folder — so it signs in the login the agent will use. Claude Code opens the browser and waits on
+a port of its own for it to come back; intrf4ce only passes on the page it prints, for when no
+browser came up, and the `code#state` that page shows, written to its stdin. Once it exits
+cleanly the agent is restarted on its session and sent what went unanswered. intrf4ce never
+handles a password or a token.

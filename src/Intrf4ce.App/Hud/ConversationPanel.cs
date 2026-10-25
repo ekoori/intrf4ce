@@ -356,6 +356,12 @@ public sealed class ConversationPanel : Border
     /// <summary>Stop whatever the agent is doing now.</summary>
     public event EventHandler? StopRequested;
 
+    /// <summary>
+    /// Looks at what is about to be sent and may take it instead — a sign-in code, which is
+    /// for Claude Code and not the agent. Taken, it is neither shown nor sent.
+    /// </summary>
+    public Func<string, bool>? Intercept { get; set; }
+
     public bool IsTyping => _input.IsFocused;
 
     /// <summary>Whether the stop button is showing, which is also whether there is anything to stop.</summary>
@@ -423,6 +429,28 @@ public sealed class ConversationPanel : Border
         _messages.Children.Clear();
         _messages.Children.Add(_empty);
         ClearContext();
+    }
+
+    /// <summary>
+    /// Something to act on rather than read, at the foot of the conversation: moved there if it
+    /// is already showing higher up, so it sits beside whatever it is about.
+    /// </summary>
+    public void AddCard(Control card)
+    {
+        _messages.Children.Remove(_empty);
+        _messages.Children.Remove(card);
+        _messages.Children.Add(card);
+        Dispatcher.UIThread.Post(_scroller.ScrollToEnd, DispatcherPriority.Background);
+    }
+
+    /// <summary>Takes a card away once there is nothing left on it to act on.</summary>
+    public void RemoveCard(Control card)
+    {
+        _messages.Children.Remove(card);
+        if (_messages.Children.Count == 0)
+        {
+            _messages.Children.Add(_empty);
+        }
     }
 
     /// <summary>A line about the conversation rather than in it: when it was reopened.</summary>
@@ -529,6 +557,12 @@ public sealed class ConversationPanel : Border
                 // A question about something may be just the pointing; a picture may be just the picture.
                 var text = !string.IsNullOrWhiteSpace(_input.Text) ? _input.Text.Trim() : HasContext ? "Tell me more about this." : "";
                 _input.Text = "";
+                if (Intercept?.Invoke(text) == true)
+                {
+                    e.Handled = true;
+                    break;
+                }
+
                 AddMessage(fromUser: true, HasContext ? $"About {_contextText.Text}: {text}" : text, attachments: _pending);
                 Submitted?.Invoke(this, text);
                 e.Handled = true;

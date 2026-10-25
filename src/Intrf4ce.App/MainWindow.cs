@@ -259,6 +259,7 @@ public sealed partial class MainWindow : Window
         });
 
         _chat.Submitted += (_, text) => OnChat(text);
+        _chat.Intercept = TakeSignInCode;
         _chat.TalkRequested += (_, _) => Talk();
         _chat.FilesDropped += (_, paths) => Attach(paths);
         _chat.AttachmentRemoved += (_, path) => Detach(path);
@@ -418,6 +419,10 @@ public sealed partial class MainWindow : Window
 
         _agent?.Start(null);
 
+        // Signed out is said now, with the way to sign in, rather than as the answer to the
+        // first thing anyone asks.
+        _ = _agent?.CheckSignInAsync();
+
         // Whatever was deleted before a crash is deleted now: u only reaches back within a run.
         _decks.Store.EmptyTrash();
 
@@ -463,6 +468,7 @@ public sealed partial class MainWindow : Window
             }
 
             _chat.AddNote($"reopened · {DateTime.Now:HH:mm}");
+            KeepSignInCard();
             if (_agent is not null && deck.AgentSession is { Length: > 0 } session)
             {
                 _ = _agent.SwitchToAsync(session);
@@ -504,6 +510,7 @@ public sealed partial class MainWindow : Window
         _resumed = null;
         _saidBeforeThereWasADeck.Clear();
         _chat.Clear();
+        KeepSignInCard();
         _chat.SetStatus(null);
         var reset = _agent?.ResetAsync(null) ?? Task.CompletedTask;
         ListSessions();
@@ -1052,6 +1059,11 @@ public sealed partial class MainWindow : Window
             case AgentActivityKind.Error:
                 _chat.SetStatus(null);
                 break;
+
+            case AgentActivityKind.SignInNeeded:
+                _chat.SetStatus(null);
+                OfferSignIn(activity.Text);
+                break;
         }
 
         UpdateHud();
@@ -1150,7 +1162,7 @@ public sealed partial class MainWindow : Window
         // whose tool calls are still arriving. Speaking or idle, it is still.
         var working = _agent?.IsWorking == true || DateTime.UtcNow < _attachedBusyUntil;
         _chat.Orb.Mood = working ? OrbMood.Working
-            : _agent?.Status == AgentStatus.Failed ? OrbMood.Error
+            : _agent?.Status == AgentStatus.Failed || _agent?.SignedOut == true ? OrbMood.Error
             : _agent is not null || attached.Count > 0 ? OrbMood.Idle
             : OrbMood.Absent;
 
@@ -1316,6 +1328,11 @@ public sealed partial class MainWindow : Window
     /// <summary>Something said from the bar or with <c>:ask</c>: into the transcript, then to the agent.</summary>
     private void Say(string text)
     {
+        if (TakeSignInCode(text))
+        {
+            return;
+        }
+
         _chat.AddMessage(fromUser: true, _asking is { } subject ? $"About {subject.Label}: {text}" : text, attachments: [.. _attachments]);
         OnChat(text);
     }

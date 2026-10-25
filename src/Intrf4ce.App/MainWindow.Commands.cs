@@ -528,6 +528,18 @@ public sealed partial class MainWindow
     [Command("stop-agent", Description = "Stop the agent's turn, keeping the conversation", Group = "The agent")]
     internal void CommandStopAgent() => StopAgent();
 
+    [Command("login", Aliases = ["signin", "sign-in"], Description = "Sign Claude Code in to your Claude account, in the browser, for the agent intrf4ce runs", Group = "The agent")]
+    internal string CommandLogin()
+    {
+        if (_agent is null)
+        {
+            throw new CommandException("intrf4ce runs no agent of its own (agent.mode is attached): sign in the one you run");
+        }
+
+        _ = SignIn();
+        return "sign in on the page that opens in your browser";
+    }
+
     // ------------------------------------------------------------------ settings and keys
 
     [Command("set", Description = "Change a setting: ':set key value', ':set key!' flips it, ':set key' says what it is", Group = "Settings and keys")]
