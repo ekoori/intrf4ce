@@ -147,10 +147,32 @@ public sealed class AgentSettings
     /// <summary>hosted (the app runs the agent) or attached (you run it and connect it).</summary>
     public string Mode { get; set; } = "hosted";
 
-    public string Command { get; set; } = "claude";
+    /// <summary>
+    /// Which agent the app runs: <c>claude</c>, Claude Code on a Claude account, or
+    /// <c>codex</c>, OpenAI's Codex on a ChatGPT account.
+    /// </summary>
+    public string Provider { get; set; } = "claude";
 
-    /// <summary>Model for the hosted agent; empty for Claude Code's default.</summary>
+    /// <summary>The command that runs the agent; empty for the provider's own, <c>claude</c> or <c>codex</c>.</summary>
+    public string Command { get; set; } = "";
+
+    /// <summary>Model for the hosted agent; empty for the provider's own default.</summary>
     public string Model { get; set; } = "";
+
+    [YamlIgnore]
+    public bool IsCodex => string.Equals(Provider, "codex", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What is run: <see cref="Command"/>, unless it is empty or names the other provider's own
+    /// command — which is what a settings file written before there was a choice says, and the
+    /// provider is the line that was changed.
+    /// </summary>
+    [YamlIgnore]
+    public string CommandToRun =>
+        Command.Trim() is { Length: > 0 } command
+        && !string.Equals(command, IsCodex ? "claude" : "codex", StringComparison.OrdinalIgnoreCase)
+            ? command
+            : IsCodex ? "codex" : "claude";
 
     /// <summary>
     /// How the agent's permission questions are answered: <c>auto</c> sends them to intrf4ce,
@@ -176,8 +198,9 @@ public sealed class AgentSettings
     public bool StrictMcp { get; set; } = true;
 
     /// <summary>
-    /// Let the agent use an <c>ANTHROPIC_API_KEY</c> from the environment, which bills the
-    /// presentation to API credit rather than to the subscription the agent is signed in with.
+    /// Let the agent use an API key from the environment — <c>ANTHROPIC_API_KEY</c> for Claude
+    /// Code, <c>OPENAI_API_KEY</c> for Codex — which bills the presentation to API credit rather
+    /// than to the subscription the agent is signed in with.
     /// </summary>
     /// <remarks>
     /// Off by default, and the variable is hidden from the agent, because inheriting a key
@@ -395,7 +418,7 @@ public static class SettingsFile
         live.Stage.ShowControls = loaded.Stage.ShowControls;
 
         // The agent is a process started at launch; the library is the folder decks came from.
-        if (live.Agent.Mode != loaded.Agent.Mode || live.Agent.Command != loaded.Agent.Command
+        if (live.Agent.Mode != loaded.Agent.Mode || live.Agent.Provider != loaded.Agent.Provider || live.Agent.Command != loaded.Agent.Command
             || live.Agent.Model != loaded.Agent.Model || live.Agent.PermissionMode != loaded.Agent.PermissionMode
             || live.Agent.WorkingDirectory != loaded.Agent.WorkingDirectory || live.Agent.StrictMcp != loaded.Agent.StrictMcp
             || live.Agent.UseApiKey != loaded.Agent.UseApiKey
@@ -776,19 +799,22 @@ public static class SettingsFile
           rate: 0                 # -10 to 10
 
         agent:
-          mode: hosted            # hosted: intrf4ce runs Claude Code for you. attached: you connect your own.
-          use_api_key: false      # true lets ANTHROPIC_API_KEY from your environment bill the
-                                  # agent to API credit instead of its own signed-in account
-          command: claude
-          model: ""               # empty for Claude Code's default
-          permission_mode: auto    # auto: intrf4ce answers the agent's permission questions and
-                                  # shows what it ran. dontAsk never asks. Also acceptEdits,
-                                  # bypassPermissions, plan, manual.
-          allowed_tools: []       # empty: every tool the permission mode allows. Narrow it with
+          mode: hosted            # hosted: intrf4ce runs the agent for you. attached: you connect your own.
+          provider: claude        # claude: Claude Code, on your Claude account. codex: OpenAI's Codex,
+                                  # on your ChatGPT account. Either signs in from the conversation.
+          use_api_key: false      # true lets ANTHROPIC_API_KEY (claude) or OPENAI_API_KEY (codex) from
+                                  # your environment bill the agent to API credit instead of its account
+          command: ""             # empty for the provider's own: claude, or codex
+          model: ""               # empty for the provider's default
+          permission_mode: auto    # claude: auto lets intrf4ce answer the agent's permission questions
+                                  # and show what it ran. dontAsk never asks. Also acceptEdits,
+                                  # bypassPermissions, plan, manual. codex: plan only reads,
+                                  # bypassPermissions has no sandbox, anything else writes in its folder.
+          allowed_tools: []       # claude: empty for every tool the permission mode allows. Narrow it with
                                   # e.g. [mcp__intrf4ce, WebSearch] for a presenter that only presents
           working_directory: ""   # empty for intrf4ce's own agent folder
-          strict_mcp: true        # only intrf4ce's tools, not every MCP server you have configured
-          extra_args: []
+          strict_mcp: true        # only intrf4ce's tools, not every MCP server or plugin you have set up
+          extra_args: []          # claude: appended to its command line
 
         stage:
           animation_speed: 1.0    # 0 turns animation off

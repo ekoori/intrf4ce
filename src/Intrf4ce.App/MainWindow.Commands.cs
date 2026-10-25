@@ -528,7 +528,7 @@ public sealed partial class MainWindow
     [Command("stop-agent", Description = "Stop the agent's turn, keeping the conversation", Group = "The agent")]
     internal void CommandStopAgent() => StopAgent();
 
-    [Command("login", Aliases = ["signin", "sign-in"], Description = "Sign Claude Code in to your Claude account, in the browser, for the agent intrf4ce runs", Group = "The agent")]
+    [Command("login", Aliases = ["signin", "sign-in"], Description = "Sign the agent intrf4ce runs in to your account — Claude, or ChatGPT for Codex — in the browser", Group = "The agent")]
     internal string CommandLogin()
     {
         if (_agent is null)

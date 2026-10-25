@@ -118,9 +118,9 @@ public sealed partial class ClaudeSignIn
             Kill(_login);
             if (Start("login") is not { } started)
             {
-                return new SignInOutcome(false, ClaudeCodeHost.ResolveCommand(_settings.Command) is null
-                    ? $"Could not find '{_settings.Command}' on the PATH. Install Claude Code, or set agent.command in settings.yaml."
-                    : $"Could not start {_settings.Command} to sign in; the log says why.");
+                return new SignInOutcome(false, ClaudeCodeHost.ResolveCommand(_settings.CommandToRun) is null
+                    ? $"Could not find '{_settings.CommandToRun}' on the PATH. Install Claude Code, or set agent.command in settings.yaml."
+                    : $"Could not start {_settings.CommandToRun} to sign in; the log says why.");
             }
 
             process = started;
@@ -295,7 +295,7 @@ public sealed partial class ClaudeSignIn
     /// </summary>
     private Process? Start(params string[] arguments)
     {
-        if (ClaudeCodeHost.ResolveCommand(_settings.Command) is not { } executable)
+        if (ClaudeCodeHost.ResolveCommand(_settings.CommandToRun) is not { } executable)
         {
             return null;
         }

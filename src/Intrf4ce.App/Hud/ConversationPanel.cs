@@ -358,7 +358,7 @@ public sealed class ConversationPanel : Border
 
     /// <summary>
     /// Looks at what is about to be sent and may take it instead — a sign-in code, which is
-    /// for Claude Code and not the agent. Taken, it is neither shown nor sent.
+    /// for the agent's sign-in and not the agent. Taken, it is neither shown nor sent.
     /// </summary>
     public Func<string, bool>? Intercept { get; set; }
 

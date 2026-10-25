@@ -17,12 +17,18 @@ Download or build a single executable (see [Building](#building)), then run it.
 By default intrf4ce runs **Claude Code for you**: start the app, type what you want explained in
 the box on the right, and watch. It needs `claude` on your PATH; anything else is settings.
 
+It can run **OpenAI's Codex** instead, on your ChatGPT account: choose *codex* for *Agent* in the
+settings panel (`,`), or set `agent.provider: codex` in `settings.yaml`, and start intrf4ce again.
+That needs `codex` on your PATH (`npm install -g @openai/codex`).
+
 To drive it from an agent you run yourself, set `agent.mode: attached` in `settings.yaml` and
 register intrf4ce as an MCP server:
 
 ```bash
 claude mcp add intrf4ce -- "C:\path\to\intrf4ce.exe" --mcp
 ```
+
+or, for Codex, `codex mcp add intrf4ce -- "C:\path\to\intrf4ce.exe" --mcp`.
 
 `intrf4ce --mcp` is the same executable in shim mode: it pumps JSON-RPC between your agent and the
 running window, and starts the window if it is not open yet.
@@ -170,21 +176,29 @@ run a second instance beside a real one.
 Saving the file applies what can change immediately — voice, pacing, volume, subtitles, animation
 speed. Changing the agent or the engine tells you it needs a restart.
 
-**The hosted agent's billing.** intrf4ce hides `ANTHROPIC_API_KEY` from the agent it runs, so a
-key left in your environment for something else cannot quietly bill your presentations to API
-credit (or fail, when that account has none and your subscription would have worked). Set
-`agent.use_api_key: true` if that is what you want. Which account the agent uses is Claude Code's
-own business: `claude auth status` says, and `claude auth login --claudeai` signs it into a
-subscription.
+**The hosted agent's billing.** intrf4ce hides `ANTHROPIC_API_KEY` from Claude Code, and
+`OPENAI_API_KEY` and `CODEX_API_KEY` from Codex, so a key left in your environment for something
+else cannot quietly bill your presentations to API credit (or fail, when that account has none and
+your subscription would have worked). Set `agent.use_api_key: true` if that is what you want.
+Which account the agent uses is its own business: `claude auth status` or `codex login status`
+says, and `claude auth login --claudeai` or `codex login` signs it into a subscription.
 
-**Signing in.** The agent works through Claude Code's own sign-in, which runs out from time to
-time. When it has, intrf4ce says so when it starts — or in place of the answer, if it was asked
-something — with a **Sign in** button in the conversation: your browser opens Claude's sign-in
-page, and once you are through, the agent starts again on the new login and is asked again what
-it could not answer. `:login` does the same at any time, to sign in to another account. If no
-browser comes up, the card has a link to the page; it ends by showing a code, which goes in the
-conversation's box. The login itself is Claude Code's `claude auth login`: intrf4ce never sees
-your password or your tokens.
+**Signing in.** The agent works through its own sign-in — Claude Code's or Codex's — which runs
+out from time to time. When it has, intrf4ce says so when it starts — or in place of the answer,
+if it was asked something — with a **Sign in** button in the conversation: your browser opens the
+sign-in page, and once you are through, the agent carries on with the new login and is asked again
+what it could not answer. `:login` does the same at any time, to sign in to another account. If no
+browser comes up, the card has a link to the page; Claude's ends by showing a code, which goes in
+the conversation's box. The login itself is the agent's own — `claude auth login`, or Codex's
+ChatGPT sign-in: intrf4ce never sees your password or your tokens.
+
+**Codex.** The hosted Codex is `codex app-server`, one thread per presentation. It works in a
+sandbox that lets it write only in intrf4ce's agent folder (`agent.permission_mode: plan` makes it
+read-only, `bypassPermissions` lifts it), and with `agent.strict_mcp` — on by default — your own
+MCP servers, plugins and apps are left out of its threads, which have intrf4ce's tools and web
+search. It uses the model in your Codex settings unless `agent.model` names another; if that
+model needs a newer Codex than the one on your PATH, Codex says so, and updating Codex or setting
+`agent.model` puts it right.
 
 **ElevenLabs.** With a key, narration is spoken by ElevenLabs — `eleven_v3` by default, the most
 natural and expressive of its models, which also takes directions such as `[curious]` or
@@ -240,7 +254,7 @@ class library against `Intrf4ce.Plugins` and two text files — see [docs/plugin
 .NET 10 SDK.
 
 ```bash
-dotnet test                              # 230 tests
+dotnet test                              # 257 tests
 dotnet run --project src/Intrf4ce.App
 ./scripts/package.ps1 -Runtime win-x64   # one self-contained exe in dist/
 ```
@@ -257,7 +271,7 @@ the hidden renderer and espeak-ng or Piper for a voice; macOS uses `say` and is 
 
 - `Intrf4ce.Core` — deck model, validation, layout, cues, settings. No UI, no platform.
 - `Intrf4ce.Media` — images and EXIF, voices, audio.
-- `Intrf4ce.Agent` — the MCP server, the tool catalog, and the hosted Claude Code process.
+- `Intrf4ce.Agent` — the MCP server, the tool catalog, and the hosted agent: Claude Code, or Codex.
 - `Intrf4ce.App` — Avalonia: the stage, the camera, the element views, the HUD.
 - `Intrf4ce.Plugins` — what a plugin is built against, and the code that reads and loads one.
 - `plugins/` — the built-in plugins: timezones, weather, holidays.

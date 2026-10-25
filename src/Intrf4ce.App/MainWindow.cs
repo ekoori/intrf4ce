@@ -55,7 +55,7 @@ public sealed partial class MainWindow : Window
     private readonly StageController _controller;
     private readonly EventHub _events = new();
     private readonly McpServer _server;
-    private readonly ClaudeCodeHost? _agent;
+    private readonly IHostedAgent? _agent;
     private readonly Grid _root;
     private readonly HeaderBar _header;
     private readonly ConversationPanel _chat;
@@ -157,7 +157,7 @@ public sealed partial class MainWindow : Window
         if (string.Equals(settings.Agent.Mode, "hosted", StringComparison.OrdinalIgnoreCase))
         {
             var prompt = catalog.Instructions + "\n\n" + catalog.HostedPrompt;
-            _agent = new ClaudeCodeHost(new HostedAgentOptions(settings.Agent, Environment.ProcessPath!, paths.AgentHome, prompt), Log.Write);
+            _agent = HostedAgent.Create(new HostedAgentOptions(settings.Agent, Environment.ProcessPath!, paths.AgentHome, prompt), Log.Write);
             _events.AddSink(_agent);
         }
 

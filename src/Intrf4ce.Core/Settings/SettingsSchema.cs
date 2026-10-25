@@ -73,10 +73,13 @@ public static class SettingsSchema
             "The title, progress and buttons over the slides. Off leaves just the slides (z)."),
         new("library.copy_media", "Copy pictures into the session", SettingKind.Toggle,
             "Off points at pictures where they live; on copies them in, so the session can travel."),
+        new("agent.provider", "Agent", SettingKind.Choice,
+            "claude runs Claude Code on your Claude account; codex runs OpenAI's Codex on your ChatGPT account.",
+            Choices: ["claude", "codex"], NeedsRestart: true),
         new("agent.permission_mode", "Agent permissions", SettingKind.Choice,
             "auto lets intrf4ce answer the agent's permission questions; dontAsk never asks at all.",
             Choices: ["auto", "dontAsk", "acceptEdits", "bypassPermissions", "plan", "manual"], NeedsRestart: true),
-        new("agent.model", "Agent model", SettingKind.Text, "Empty for Claude Code's own default.", NeedsRestart: true),
+        new("agent.model", "Agent model", SettingKind.Text, "Empty for the agent's own default.", NeedsRestart: true),
     ];
 
     public static SettingEntry? Find(string key) =>
@@ -103,6 +106,7 @@ public static class SettingsSchema
             "stage.follow_agent" => Text(settings.Stage.FollowAgent),
             "stage.show_controls" => Text(settings.Stage.ShowControls),
             "library.copy_media" => Text(settings.Library.CopyMedia),
+            "agent.provider" => settings.Agent.Provider,
             "agent.permission_mode" => settings.Agent.PermissionMode,
             "agent.model" => settings.Agent.Model,
             _ => "",

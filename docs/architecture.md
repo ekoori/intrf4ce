@@ -20,7 +20,7 @@ That way an agent registers one command, and the user never runs a server.
 |---|---|
 | `Intrf4ce.Core` | deck model and JSON, validation, slide and callout and gallery layout, cue parsing and speech timing, settings, event hub. No Avalonia, no platform: everything here is testable without a window. |
 | `Intrf4ce.Media` | image decoding and EXIF, asset fetching, TTS engines (ElevenLabs, SAPI, `say`/espeak/Piper), audio playback and loudness envelopes. |
-| `Intrf4ce.Agent` | the MCP server and its tool catalog, the tool handlers, and the hosted Claude Code process. |
+| `Intrf4ce.Agent` | the MCP server and its tool catalog, the tool handlers, and the hosted agent — Claude Code or Codex — behind `IHostedAgent`. |
 | `Intrf4ce.App` | Avalonia: the stage and camera, element views, the hidden renderer, the HUD. |
 | `Intrf4ce.Plugins` | what a plugin is built against — `IPlugin`, `ElementType`, `LiveElement` — and the code that reads, checks and loads a plugin file. Avalonia and this are all a plugin shares with the app. |
 | `plugins/*` | the built-in plugins, each its own project, packed by `plugins/Directory.Build.targets` into an `.i4p` the app carries as a resource. |
@@ -210,6 +210,23 @@ and a path is what an image element or a gallery wants. The conversation keeps t
 the line they went with, so a reopened presentation shows the pictures again, and the agent's
 summary of a session lists them.
 
+## The hosted agent
+
+`IHostedAgent` is what the window starts, talks to, stops and signs in, whichever agent it is;
+`HostedAgent.Create` picks one from `agent.provider`. `ClaudeCodeHost` runs `claude -p` with
+stream-json both ways. `CodexHost` runs `codex app-server` and speaks its JSON-RPC: a thread per
+presentation, opened or resumed with the first message, a turn per message, `turn/interrupt` for
+the stop button. Everything intrf4ce sets for Codex travels with `thread/start` as JSON — intrf4ce
+as an MCP server (with `INTRF4CE_HOME`, which Codex would not otherwise pass on), the presenter's
+instructions as developer instructions, the sandbox, live web search, and under `strict_mcp` the
+user's own MCP servers (named by `config/read`), plugins and apps turned off for that thread — so
+nothing has to survive a .cmd shim's command line. Codex asks before each MCP tool call, as an
+elicitation; intrf4ce accepts, as it answers Claude Code's permission questions.
+
+A deck remembers the session that built it. Opened with the other agent, that session is not
+there to resume, and each host starts a new one rather than failing; the deck tells it what is on
+the stage.
+
 ## Signing in
 
 The hosted agent signs in however Claude Code is signed in, and that login expires. Claude Code
@@ -226,3 +243,9 @@ a port of its own for it to come back; intrf4ce only passes on the page it print
 browser came up, and the `code#state` that page shows, written to its stdin. Once it exits
 cleanly the agent is restarted on its session and sent what went unanswered. intrf4ce never
 handles a password or a token.
+
+Codex signs in through its app server: `account/read` says whether there is an account,
+`account/login/start` gives the page, which intrf4ce opens, and `account/login/completed` says
+how it went; Codex waits for the browser on a port of its own. Signed out, Codex does not fail a
+turn at once but retries it on 401s for several seconds, so `CodexHost` stops the turn at the
+first refusal and reports `SignInNeeded` as Claude Code's host does.

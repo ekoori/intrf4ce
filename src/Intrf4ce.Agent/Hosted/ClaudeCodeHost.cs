@@ -8,52 +8,6 @@ using Intrf4ce.Core.Settings;
 
 namespace Intrf4ce.Agent.Hosted;
 
-public enum AgentStatus
-{
-    Stopped,
-    Starting,
-    Idle,
-    Working,
-    Failed,
-}
-
-public enum AgentActivityKind
-{
-    /// <summary>The session started; <see cref="AgentActivity.Text"/> is the model.</summary>
-    Started,
-
-    /// <summary>Something the agent said to the user.</summary>
-    Said,
-
-    /// <summary>The agent called a tool; <see cref="AgentActivity.Text"/> says which, in words.</summary>
-    Tool,
-
-    /// <summary>A turn finished; <see cref="AgentActivity.Cost"/> is the session total so far.</summary>
-    TurnDone,
-
-    Error,
-
-    Exited,
-
-    /// <summary>
-    /// Claude Code is not signed in, so nothing said reaches the agent until it is.
-    /// <see cref="AgentActivity.Text"/> is how Claude Code put it; empty when a check found it
-    /// before anything was said.
-    /// </summary>
-    SignInNeeded,
-}
-
-public sealed record AgentActivity(AgentActivityKind Kind, string Text, double? Cost = null);
-
-/// <summary>What the host needs to know to start Claude Code.</summary>
-/// <param name="Executable">This program, so the agent can be given <c>intrf4ce --mcp --hosted</c> as its MCP server.</param>
-/// <param name="Home">A folder of its own for the agent's working directory and config files.</param>
-public sealed record HostedAgentOptions(
-    AgentSettings Settings,
-    string Executable,
-    string Home,
-    string SystemPrompt);
-
 /// <summary>
 /// Runs Claude Code headless, streaming JSON both ways, as the presenter behind the chat box.
 /// </summary>
@@ -68,7 +22,7 @@ public sealed record HostedAgentOptions(
 /// empty.
 /// </para>
 /// </remarks>
-public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
+public sealed class ClaudeCodeHost : IHostedAgent
 {
     private readonly HostedAgentOptions _options;
     private readonly Action<string> _log;
@@ -101,10 +55,8 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
     /// <summary>Claude Code's own sign-in, run the way the agent is, so it signs in the login the agent uses.</summary>
     public ClaudeSignIn Account { get; }
 
-    /// <summary>
-    /// Claude Code is not signed in, as far as the last turn or check could tell; a turn that
-    /// gets through, or <see cref="SignInAsync"/>, puts it right.
-    /// </summary>
+    public AgentIdentity Identity { get; } = new("Claude Code", "Claude", CodeToPaste: true);
+
     public bool SignedOut { get; private set; }
 
     /// <summary>
@@ -183,13 +135,23 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
 
             SetStatus(AgentStatus.Starting);
 
-            var executable = ResolveCommand(_options.Settings.Command);
+            var command = _options.Settings.CommandToRun;
+            var executable = ResolveCommand(command);
             if (executable is null)
             {
-                LastError = $"Could not find '{_options.Settings.Command}' on the PATH. Install Claude Code, or set agent.command in settings.yaml.";
+                LastError = $"Could not find '{command}' on the PATH. Install Claude Code, or set agent.command in settings.yaml.";
                 SetStatus(AgentStatus.Failed);
                 Activity?.Invoke(this, new AgentActivity(AgentActivityKind.Error, LastError));
                 return;
+            }
+
+            // A deck remembers the conversation that built it, and that may be one Claude Code
+            // never had — made with another agent — or one since cleared away. Resuming it would
+            // fail on every start; the deck itself tells a fresh conversation what is there.
+            if (resumeSession is not null && TranscriptOf(resumeSession).Count == 0)
+            {
+                _log($"Claude Code has no conversation {resumeSession}; starting a new one");
+                resumeSession = null;
             }
 
             var start = BuildStart(executable, resumeSession);
@@ -323,6 +285,8 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             Activity?.Invoke(this, new AgentActivity(AgentActivityKind.SignInNeeded, ""));
         }
     }
+
+    public bool SubmitSignInCode(string code) => Account.SubmitCode(code);
 
     /// <summary>
     /// Signs Claude Code in, in the browser, and carries on: a fresh agent, which reads the new
@@ -497,7 +461,10 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
         // that credit has run out. The user asks for it in settings or it does not happen.
         if (!settings.UseApiKey)
         {
-            start.Environment.Remove("ANTHROPIC_API_KEY");
+            foreach (var key in settings.IsCodex ? ["OPENAI_API_KEY", "CODEX_API_KEY"] : new[] { "ANTHROPIC_API_KEY" })
+            {
+                start.Environment.Remove(key);
+            }
         }
 
         // A .cmd shim from npm cannot be started directly without a shell.
@@ -668,7 +635,8 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
                             break;
 
                         case "tool_use":
-                            Activity?.Invoke(this, new AgentActivity(AgentActivityKind.Tool, Describe(block)));
+                            Activity?.Invoke(this, new AgentActivity(AgentActivityKind.Tool,
+                                ToolStatus.Describe(block["name"]?.GetValue<string>() ?? "a tool", block["input"] as JsonObject)));
                             break;
                     }
                 }
@@ -830,47 +798,6 @@ public sealed class ClaudeCodeHost : IEventSink, IAsyncDisposable
             }
         }
     }
-
-    /// <summary>A tool call as a status line: "Searching the web for knee anatomy".</summary>
-    internal static string Describe(JsonObject toolUse)
-    {
-        var name = toolUse["name"]?.GetValue<string>() ?? "a tool";
-        var input = toolUse["input"] as JsonObject;
-        string? Arg(string key) => input?[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
-
-        var shortName = name.StartsWith("mcp__intrf4ce__", StringComparison.Ordinal) ? name["mcp__intrf4ce__".Length..] : name;
-
-        return shortName switch
-        {
-            "WebSearch" => $"Searching the web for {Arg("query") ?? "…"}",
-            "WebFetch" => $"Reading {Host(Arg("url"))}",
-            "Read" => $"Reading {Path.GetFileName(Arg("file_path") ?? "a file")}",
-            "Glob" or "Grep" => "Looking through files",
-            "Bash" => "Running " + Short(Arg("command") ?? "a command"),
-            "Task" => "Asking a helper to " + Short(Arg("description") ?? "look into something"),
-            "TodoWrite" => "Planning",
-            "put_slide" => $"Building slide “{input?["slide"]?["title"]?.GetValue<string>() ?? input?["slide"]?["id"]?.GetValue<string>() ?? "…"}”",
-            "update_slide" => $"Updating slide {Arg("id")}",
-            "new_deck" => $"Starting “{Arg("title")}”",
-            "inspect_image" => "Studying an image",
-            "scan_media" => "Looking through photos",
-            "snapshot" => "Checking the stage",
-            "wait_for_user" => "Listening",
-            "set_playback" => "",
-            "describe_deck" => "Looking at another session",
-            "group_decks" or "rename_group" => "Filing sessions",
-            "get_settings" or "set_setting" => "Checking the settings",
-            "reply" or "say" or "get_state" or "go_to" or "focus" => "",
-            _ => shortName.Replace('_', ' '),
-        };
-    }
-
-    /// <summary>A command line short enough for a status line.</summary>
-    private static string Short(string text) =>
-        text.Length <= 48 ? text : text[..47].TrimEnd() + "…";
-
-    private static string Host(string? url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "a page";
 
     private async Task ReadErrorsAsync(Process process)
     {

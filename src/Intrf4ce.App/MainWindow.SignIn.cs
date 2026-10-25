@@ -6,22 +6,22 @@ using Intrf4ce.App.Hud;
 namespace Intrf4ce.App;
 
 /// <summary>
-/// Signing Claude Code back in when it is signed out, without a terminal: a card in the
+/// Signing the agent back in when it is signed out, without a terminal: a card in the
 /// conversation, the browser, and the agent carrying on with what it was asked.
 /// </summary>
 public sealed partial class MainWindow
 {
-    /// <summary>The card that signs Claude Code in, while one is wanted.</summary>
+    /// <summary>The card that signs the agent in, while one is wanted.</summary>
     private SignInCard? _signIn;
 
     /// <summary>The sign-in under way, to give it up; null while there is none.</summary>
     private CancellationTokenSource? _signingIn;
 
     /// <summary>
-    /// Claude Code is signed out: the card that signs it in, at the foot of the conversation,
+    /// The agent is signed out: the card that signs it in, at the foot of the conversation,
     /// beside the question it could not answer.
     /// </summary>
-    /// <param name="said">What Claude Code said; empty when that was found out before anything was asked.</param>
+    /// <param name="said">What the agent said; empty when that was found out before anything was asked.</param>
     private void OfferSignIn(string said)
     {
         var card = _signIn ??= NewSignInCard();
@@ -38,7 +38,7 @@ public sealed partial class MainWindow
             _chat.Collapse(false);
         }
 
-        Log.Write("Claude Code is signed out" + (said.Length > 0 ? ": " + said : ""));
+        Log.Write($"{_agent?.Identity.Name} is signed out" + (said.Length > 0 ? ": " + said : ""));
     }
 
     /// <summary>
@@ -56,7 +56,7 @@ public sealed partial class MainWindow
 
     private SignInCard NewSignInCard()
     {
-        var card = new SignInCard(_theme);
+        var card = new SignInCard(_theme, _agent?.Identity ?? new AgentIdentity("The agent", "agent", CodeToPaste: false));
         card.SignInRequested += (_, _) => _ = SignIn();
         card.CancelRequested += (_, _) => CancelSignIn();
         card.PageRequested += (_, address) => OpenSignInPage(card, address);
@@ -64,8 +64,8 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Signs Claude Code in, in the browser, with the card following along. Once it is done the
-    /// agent starts again on the new login, and is asked again what it could not answer.
+    /// Signs the agent in, in the browser, with the card following along. Once it is done the
+    /// agent carries on with the new login, and is asked again what it could not answer.
     /// </summary>
     private async Task SignIn()
     {
@@ -97,7 +97,7 @@ public sealed partial class MainWindow
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or Win32Exception)
         {
-            Log.Error("signing Claude Code in", ex);
+            Log.Error("signing the agent in", ex);
             outcome = new SignInOutcome(false, ex.Message);
         }
 
@@ -124,7 +124,7 @@ public sealed partial class MainWindow
         }
         else
         {
-            card.Fail(outcome.Error ?? "Claude Code stopped before it was signed in.");
+            card.Fail(outcome.Error ?? $"{_agent.Identity.Name} stopped before it was signed in.");
         }
 
         UpdateHud();
@@ -168,11 +168,11 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// A sign-in code, typed or pasted where the agent is talked to while a sign-in waits for
-    /// one: it goes to Claude Code, and is neither shown nor kept with the presentation.
+    /// one: it goes to the agent's sign-in, and is neither shown nor kept with the presentation.
     /// </summary>
     private bool TakeSignInCode(string text)
     {
-        if (_signingIn is null || _agent?.Account.SubmitCode(text) != true)
+        if (_signingIn is null || _agent?.SubmitSignInCode(text) != true)
         {
             return false;
         }

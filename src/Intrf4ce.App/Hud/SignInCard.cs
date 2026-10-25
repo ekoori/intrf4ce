@@ -4,21 +4,24 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Intrf4ce.Agent.Hosted;
 
 namespace Intrf4ce.App.Hud;
 
 /// <summary>
-/// The conversation's way back in when Claude Code is signed out: one card that asks, waits on
+/// The conversation's way back in when the agent is signed out: one card that asks, waits on
 /// the browser, and says how it went.
 /// </summary>
 /// <remarks>
-/// A card rather than a message, because the thing to do is press a button. What Claude Code
-/// itself says — "please run /login" — is an instruction for a terminal intrf4ce does not have,
-/// so it is kept small, at the foot, for whoever wants to know exactly what went wrong.
+/// A card rather than a message, because the thing to do is press a button. What the agent
+/// itself says — Claude Code's "please run /login" — is an instruction for a terminal intrf4ce
+/// does not have, so it is kept small, at the foot, for whoever wants to know exactly what went
+/// wrong.
 /// </remarks>
 public sealed class SignInCard : Border
 {
     private readonly Skin _theme;
+    private readonly AgentIdentity _agent;
     private readonly TextBlock _title;
     private readonly SelectableTextBlock _text;
     private readonly Border _button;
@@ -31,9 +34,10 @@ public sealed class SignInCard : Border
     private bool _askAgain;
     private bool _asking;
 
-    public SignInCard(Skin theme)
+    public SignInCard(Skin theme, AgentIdentity agent)
     {
         _theme = theme;
+        _agent = agent;
         CornerRadius = new CornerRadius(12);
         Padding = new Thickness(14, 12);
         BorderThickness = new Thickness(1);
@@ -73,7 +77,7 @@ public sealed class SignInCard : Border
 
         Clickable(_button, () => _click?.Invoke());
 
-        // Only once Claude Code has said where its page is: for when no browser came up.
+        // Only once the agent has said where its page is: for when no browser came up.
         _page = new TextBlock
         {
             Text = "No browser? Open the sign-in page",
@@ -120,7 +124,7 @@ public sealed class SignInCard : Border
     public event EventHandler<string>? PageRequested;
 
     /// <summary>Asks for a sign-in.</summary>
-    /// <param name="said">What Claude Code said when it could not answer; null when nothing was asked yet.</param>
+    /// <param name="said">What the agent said when it could not answer; null when nothing was asked yet.</param>
     /// <param name="askAgain">Whether something is waiting to be asked again once signed in.</param>
     public void Ask(string? said, bool askAgain)
     {
@@ -134,12 +138,12 @@ public sealed class SignInCard : Border
     {
         _asking = true;
         Paint(_theme.Accent);
-        _title.Text = "Claude Code is signed out";
-        _text.Text = "The agent works through your Claude account, so it cannot answer until you sign in."
+        _title.Text = $"{_agent.Name} is signed out";
+        _text.Text = $"The agent works through your {_agent.Account} account, so it cannot answer until you sign in."
             + (_askAgain ? " What you asked goes to it again once you are in." : "");
         Button("Sign in", () => SignInRequested?.Invoke(this, EventArgs.Empty), primary: true);
         _page.IsVisible = false;
-        Said(_lastSaid is { Length: > 0 } said ? "Claude Code said: " + said : null);
+        Said(_lastSaid is { Length: > 0 } said ? $"{_agent.Name} said: {said}" : null);
     }
 
     /// <summary>What was asked went with the conversation it was asked in: nothing is asked again now.</summary>
@@ -152,14 +156,14 @@ public sealed class SignInCard : Border
         }
     }
 
-    /// <summary>Claude Code has opened the browser and waits for it to come back.</summary>
+    /// <summary>The browser is open on the sign-in page, and the agent waits for it to come back.</summary>
     public void Wait()
     {
         _asking = false;
         _address = null;
         Paint(_theme.Accent);
         _title.Text = "Signing in…";
-        _text.Text = "Claude's sign-in page has opened in your browser. This carries on by itself once you are through.";
+        _text.Text = $"{_agent.Account}'s sign-in page has opened in your browser. This carries on by itself once you are through.";
         Button("Cancel", () => CancelRequested?.Invoke(this, EventArgs.Empty), primary: false);
         _page.IsVisible = false;
         Said(null);
@@ -173,17 +177,19 @@ public sealed class SignInCard : Border
         Reveal();
     }
 
-    /// <summary>The page was opened by hand, so its code comes back by hand.</summary>
+    /// <summary>The page was opened by hand; for some agents its code then comes back by hand too.</summary>
     public void PageOpened()
     {
-        _text.Text = "Sign in on the page that opened. When it shows a code, paste it into the box below and press Enter.";
+        _text.Text = _agent.CodeToPaste
+            ? "Sign in on the page that opened. When it shows a code, paste it into the box below and press Enter."
+            : "Sign in on the page that opened. This carries on by itself once you are through.";
         Reveal();
     }
 
-    /// <summary>A code went to Claude Code, which is checking it.</summary>
+    /// <summary>A code went to the agent, which is checking it.</summary>
     public void CodeTaken()
     {
-        _text.Text = "Checking the code with Claude…";
+        _text.Text = $"Checking the code with {_agent.Account}…";
         Reveal();
     }
 
