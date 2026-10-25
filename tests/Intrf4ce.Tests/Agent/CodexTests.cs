@@ -123,6 +123,25 @@ public sealed class CodexTests
         Assert.False(CodexHost.IsUnauthorized(null));
     }
 
+    /// <summary>
+    /// Codex 0.164 refused every put_slide outright — "MCP tool call requires approval, but
+    /// approval policy is never" — and the presenter gave up and wrote its slides into the chat.
+    /// </summary>
+    [Fact]
+    public void Intrf4cesToolsGoAheadWithoutAskingForApproval()
+    {
+        var server = CodexHost.McpServer(@"C:\apps\intrf4ce.exe", null);
+
+        Assert.Equal("approve", server["default_tools_approval_mode"]!.GetValue<string>());
+        Assert.Equal(@"C:\apps\intrf4ce.exe", server["command"]!.GetValue<string>());
+        Assert.Equal(["--mcp", "--hosted"], server["args"]!.AsArray().Select(a => a!.GetValue<string>()));
+        Assert.Null(server["env"]);
+    }
+
+    [Fact]
+    public void AWindowWithAHomeOfItsOwnTellsTheShimWhichPipe() =>
+        Assert.Equal(@"C:\test home", CodexHost.McpServer("intrf4ce.exe", @"C:\test home")["env"]!["INTRF4CE_HOME"]!.GetValue<string>());
+
     [Theory]
     [InlineData("plan", "read-only")]
     [InlineData("bypassPermissions", "danger-full-access")]

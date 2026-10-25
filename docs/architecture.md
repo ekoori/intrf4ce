@@ -220,8 +220,12 @@ the stop button. Everything intrf4ce sets for Codex travels with `thread/start` 
 as an MCP server (with `INTRF4CE_HOME`, which Codex would not otherwise pass on), the presenter's
 instructions as developer instructions, the sandbox, live web search, and under `strict_mcp` the
 user's own MCP servers (named by `config/read`), plugins and apps turned off for that thread — so
-nothing has to survive a .cmd shim's command line. Codex asks before each MCP tool call, as an
-elicitation; intrf4ce accepts, as it answers Claude Code's permission questions.
+nothing has to survive a .cmd shim's command line. intrf4ce's server is set to
+`default_tools_approval_mode = "approve"`, so its tools go ahead without asking, as Claude Code's
+do when intrf4ce answers its permission questions: since Codex 0.164 a tool call that wants
+approval under `approvalPolicy: never` is refused outright, and the presenter, unable to build a
+slide, writes its answer into the chat instead. An older Codex that asks, as an elicitation, is
+told yes.
 
 A deck remembers the session that built it. Opened with the other agent, that session is not
 there to resume, and each host starts a new one rather than failing; the deck tells it what is on

@@ -890,25 +890,9 @@ public sealed partial class CodexHost : IHostedAgent
     /// </summary>
     private async Task<JsonObject> ThreadConfigAsync()
     {
-        var server = new JsonObject
-        {
-            ["command"] = _options.Executable,
-            ["args"] = new JsonArray("--mcp", "--hosted"),
-
-            // put_slide comes back once the slide has rendered, which can take a while.
-            ["tool_timeout_sec"] = 300,
-        };
-
-        // Codex passes an MCP server only a few of its own environment variables, and a window
-        // with a home of its own listens on a pipe of its own: the shim must be told which.
-        if (Environment.GetEnvironmentVariable(AppPaths.HomeVariable) is { Length: > 0 } home)
-        {
-            server["env"] = new JsonObject { [AppPaths.HomeVariable] = home };
-        }
-
         var config = new JsonObject
         {
-            ["mcp_servers.intrf4ce"] = server,
+            ["mcp_servers.intrf4ce"] = McpServer(_options.Executable, Environment.GetEnvironmentVariable(AppPaths.HomeVariable)),
             ["web_search"] = "live",
         };
 
@@ -936,6 +920,36 @@ public sealed partial class CodexHost : IHostedAgent
         }
 
         return config;
+    }
+
+    /// <summary>intrf4ce as Codex's MCP server: the shim, and how Codex is to treat its tools.</summary>
+    /// <param name="executable">This program, run as <c>--mcp --hosted</c>.</param>
+    /// <param name="home">The window's own <c>INTRF4CE_HOME</c>, when it has one.</param>
+    internal static JsonObject McpServer(string executable, string? home)
+    {
+        var server = new JsonObject
+        {
+            ["command"] = executable,
+            ["args"] = new JsonArray("--mcp", "--hosted"),
+
+            // put_slide comes back once the slide has rendered, which can take a while.
+            ["tool_timeout_sec"] = 300,
+
+            // The stage is what the presenter is for: its tools go ahead without asking, as
+            // Claude Code's do when intrf4ce answers its permission questions. Codex 0.164
+            // refuses outright a call that wants approval under approvalPolicy never, where
+            // 0.145 still asked; one that asks is accepted, in OnRequest.
+            ["default_tools_approval_mode"] = "approve",
+        };
+
+        // Codex passes an MCP server only a few of its own environment variables, and a window
+        // with a home of its own listens on a pipe of its own: the shim must be told which.
+        if (home is { Length: > 0 })
+        {
+            server["env"] = new JsonObject { [AppPaths.HomeVariable] = home };
+        }
+
+        return server;
     }
 
     /// <summary>The account Codex is signed in to, or null when it cannot say.</summary>
