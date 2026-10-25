@@ -25,7 +25,8 @@
     <Product>intrf4ce</Product>
     <Company>intrf4ce</Company>
     <Authors>ekoori</Authors>
-    <Copyright>Copyright © ekoori</Copyright>
+    <Copyright>Copyright © 2026 ekoori</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <VersionPrefix>0.1.0</VersionPrefix>
   </PropertyGroup>
 

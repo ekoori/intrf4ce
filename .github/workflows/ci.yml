@@ -1,0 +1,22 @@
+# Build and test on every push to main and every pull request. Windows, because that is what
+# intrf4ce is built and verified on; the tests themselves need no window and no agent.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Test
+        run: dotnet test --nologo

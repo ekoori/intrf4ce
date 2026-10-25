@@ -12,7 +12,10 @@ in `settings.yaml`, and no tool lets an agent touch them.
 
 ## Quick start
 
-Download or build a single executable (see [Building](#building)), then run it.
+Download `intrf4ce-win-x64.exe` from the [latest release](../../releases/latest), or build it
+(see [Building](#building)), and run it. It is one self-contained file: no .NET to install. It
+needs Windows 10 or 11 with the WebView2 runtime (Windows 11 has it), and an agent to run — Claude
+Code or OpenAI's Codex, installed and signed in.
 
 By default intrf4ce runs **Claude Code for you**: start the app, type what you want explained in
 the box on the right, and watch. It needs `claude` on your PATH; anything else is settings.
@@ -267,6 +270,10 @@ which is the quickest way to see whether the hidden renderer works on a machine,
 **Platforms.** Windows is what this was built and tested on. The Linux build needs WebKitGTK for
 the hidden renderer and espeak-ng or Piper for a voice; macOS uses `say` and is not yet verified.
 
+**Releases.** Pushing a tag such as `v0.2.0` runs the tests, packages the Windows executable and
+publishes it as a GitHub release with notes from the commits (`.github/workflows/release.yml`).
+Every push and pull request is built and tested (`.github/workflows/ci.yml`).
+
 ## How it is put together
 
 - `Intrf4ce.Core` — deck model, validation, layout, cues, settings. No UI, no platform.
@@ -279,6 +286,11 @@ the hidden renderer and espeak-ng or Piper for a voice; macOS uses `say` and is 
 Avalonia in code, no XAML and no MVVM; the window is the composition root and builds everything by
 hand. More in [docs/architecture.md](docs/architecture.md) and the design in
 [docs/plans](docs/plans/2026-09-22-intrf4ce-design.md).
+
+## Contributing
+
+Issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) has how to build, test
+and run a second window beside your own, and how the code is written.
 
 ## Licence
 
