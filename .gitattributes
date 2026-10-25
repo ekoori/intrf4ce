@@ -9,6 +9,7 @@
 
 # Binary, never touched.
 *.png binary
+*.gif binary
 *.jpg binary
 *.jpeg binary
 *.ico binary

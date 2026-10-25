@@ -2,6 +2,8 @@
 
 A presentation that builds itself while you watch.
 
+![Asked how a jet engine works, the agent answers in the conversation and builds the slides one after another: a title, a cutaway with labelled callouts the camera flies to as the narration names them, a diagram walked node by node, and a 3D engine turning to face its fan; then the whole deck at once](docs/media/intrf4ce.gif)
+
 intrf4ce is a stage an agent drives over MCP. You ask for something to be explained — a concept,
 a machine, a folder of photos, a book — and slides appear one after another: images with labelled
 callouts, diagrams that zoom node by node, formulas, charts, tables, photo galleries and quizzes,
@@ -37,6 +39,18 @@ or, for Codex, `codex mcp add intrf4ce -- "C:\path\to\intrf4ce.exe" --mcp`.
 running window, and starts the window if it is not open yet.
 
 ## What the agent can put on a slide
+
+<p>
+  <img src="docs/media/callouts.png" width="49%" alt="A cutaway of a turbofan with labelled callouts; the camera is on the fan, its callout lit with a sentence about it, while the subtitles run under the slide">
+  <img src="docs/media/diagram.png" width="49%" alt="A diagram of the air's path through the engine, zoomed to the turbine node as the narration reaches it">
+  <img src="docs/media/model3d.png" width="49%" alt="A 3D turbofan built from shapes — fan, compressor, combustor, turbine, shaft, exhaust cone inside a glass nacelle — each part labelled">
+  <img src="docs/media/map.png" width="49%" alt="A map flown to Rolls-Royce in Derby, one of the places the narration visits">
+</p>
+
+*How a jet engine works*, as built in the recording above. The agent's side of it was scripted
+over the same MCP tools an agent uses, so it is quicker than a real one, which researches as it
+goes. Cutaway: GE CF6-6, U.S. National Archives, public domain. Map data © OpenStreetMap
+contributors.
 
 | element | what it is |
 |---|---|
